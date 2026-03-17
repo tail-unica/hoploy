@@ -1,2 +1,2 @@
-# hoploy
-Inference framework for hopwise
+# Hoploy
+Serving layer for Hopwise recommendation models

@@ -1,0 +1,30 @@
+# ── build stage ──────────────────────────────────────────────────────────────
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# install build tools only in builder layer
+RUN pip install --upgrade pip setuptools wheel
+
+COPY pyproject.toml ./
+COPY hopwise_serve/ hopwise_serve/
+
+RUN pip install --no-cache-dir .[dev]
+
+# ── runtime stage ─────────────────────────────────────────────────────────────
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# copy installed packages from builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# copy source and config
+COPY hopwise_serve/ hopwise_serve/
+COPY configs/ configs/
+
+EXPOSE 8000
+
+ENTRYPOINT ["hopwise-serve"]
+CMD ["--config", "configs/default.yaml"]

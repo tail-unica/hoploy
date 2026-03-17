@@ -1,0 +1,18 @@
+model: "BPR"
+preprocessor: "default"
+processors: []
+postprocessor: "cumulative_score"
+unpacker: "default"
+plugins_dir: "plugins"
+
+constraints:
+  word_level_restrictions: {}
+  zero_shot_constraints: {}
+  custom_rules: {}
+  processor_order: []
+
+serve:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 1
+  log_level: "info"
