@@ -1,18 +1,37 @@
-model: "BPR"
-preprocessor: "default"
-processors: []
-postprocessor: "cumulative_score"
-unpacker: "default"
-plugins_dir: "plugins"
+model:
+  pearlm:
+    name: pearlm
+    device: "cpu"
+    hopwise_checkpoint_file: ""
+    dataset: "default" 
+    compile_mode: "default"
+  kgglm:
+    name: kgglm
+    device: "cpu"
+    hopwise_checkpoint_file: ""
+    diversity_factor: 0.3
+    propagate_connected_entities: false 
+    compile_mode: "default"
+    recommendation_count: 5
 
-constraints:
-  word_level_restrictions: {}
-  zero_shot_constraints: {}
-  custom_rules: {}
-  processor_order: []
+logits_processors:
+  default:
+    name: default_logits_processor
+    repetition_penalty: 1.2
+    no_repeat_ngram_size: 3
 
-serve:
-  host: "0.0.0.0"
-  port: 8000
-  workers: 1
-  log_level: "info"
+sequence_processor:
+  default:
+    name: default_cumulative_sequence_processor
+
+plugin:
+  autism:
+    name: autism
+    path: "plugins/autism"
+    model: [autism_model]
+    logits_processors: [autism_logits_processor]
+    sequence_processor: [autism_sequence_processor]
+
+logging:
+  level: "DEBUG"
+  format: "%(levelname_c)-9s %(message)s"

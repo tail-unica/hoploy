@@ -1,37 +1,35 @@
-from __future__ import annotations
+from fastapi import APIRouter, Request, Depends, HTTPException, status
 
-import asyncio
-from typing import Any
+from hoploy.api.schemas.autism_schema import (
+    RecommendationRequest,
+    RecommendationResponse,
+)
 
-from fastapi import APIRouter, HTTPException, Request
+router = APIRouter()
 
-from hoploy.api.schemas.request import RecommendRequest
-from hoploy.api.schemas.response import RecommendResponse
-from hoploy.core.state import GenerationState
+def _get_service(request: Request):
+    service = getattr(request.app.state, "service", None)
+    if not service or not service.is_ready():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service warming up")
+    return service
 
-router = APIRouter(tags=["recommend"])
+@router.post("/recommend", response_model=RecommendationResponse)
+async def get_recommendation(
+    request: RecommendationRequest,
+    service = Depends(_get_service)
+) -> RecommendationResponse:
+    """
+    Place recommendation endpoint.
+    """
 
+    service.logger.info(f"RecommendationRequest from {request.user_id} with preferences: {request.preferences}")
 
-@router.post("/recommend", response_model=RecommendResponse)
-async def recommend(body: RecommendRequest, request: Request) -> Any:
-    """Generate recommendations for a user."""
-    pipeline = request.app.state.pipeline
+    recommender_response = service.run(**request.model_dump())
 
-    if pipeline is None or not getattr(pipeline, "_built", False):
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
+    if not recommender_response:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No recommendations found for user {request.user_id} with the specified criteria",
+        )
 
-    state = GenerationState(
-        user_id=body.user_id,
-        step=0,
-        input_ids=(),
-        generated_ids=(),
-        constraint_config={},
-        context=body.model_dump(),
-    )
-
-    result = await asyncio.to_thread(pipeline.run, state)
-
-    if result is None:
-        raise HTTPException(status_code=500, detail="Generation failed")
-
-    return result
+    return RecommendationResponse(**recommender_response)

@@ -1,0 +1,18 @@
+services:
+  hoploy:
+    build:
+      context: .
+    image: hoploy:latest
+    # ports:
+    #  - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=all
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]

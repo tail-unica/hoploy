@@ -1,0 +1,35 @@
+model:
+  kgglm:
+    name: autism_model
+    device: "cuda" # "cuda" or "cpu"
+    hopwise_checkpoint_file: "checkpoint/autism/hopwise-distilgpt2-KGGLM-Mar-05-2026_15-19-51.pth"
+    dataset: "dataset/autism"
+    diversity_factor: 0.3
+    propagate_connected_entities: false  # If true, entities connected with restricted KG elements will also be restricted
+    compile_mode: "default"  # Options: "default", "reduce-overhead", "max-autotune"
+    remove_user_tokens_from_sequences: false  # If true, user tokens will be removed from sequences in zero-shot recommendation
+    tag_offset: 0.1  # Offset for accepting tag matching vs other matching in zero-shot recommendation
+  
+  force_paths: # Sequences of relation types to force in the generated paths
+    - ['HAS_SENSORY_FEATURE', 'HAS_SENSORY_FEATURE_r'] # type 2. [I] [HAS_SENSORY_FEATURE] [E: sensory_feature] [HAS_SENSORY_FEATURE_r] [I]
+    - ['[UI-Relation]', '[UI-Relation]'] # type 4. [I] [UI-Relation] [U] [UI-Relation] [I]
+    - ['HAS_SENSORY_FEATURE_r'] # type 6. [E: sensory_feature] [HAS_SENSORY_FEATURE_r] [I]
+    - ['HAS_SENSORY_COMPATIBILITY_r', '[UI-Relation]'] # TYPE 7. [E: sensory_feature] [HAS_SENSORY_COMPATIBILITY_r] [U] [UI-Relation] [I]
+    - ['HAS_SENSORY_FEATURE', 'HAS_SENSORY_FEATURE_r', '[UI-Relation]'] # TYPE 7 (variance)
+  
+  force_path_explanations:
+    - "Ti suggeriamo %(I2) perché ti è piaciuto %(I1), che ha lo stesso livello di %(E1)"
+    - "Ti suggeriamo %(I2) perché è piaciuto ad una persona a cui, come a te, è piaciuto %(I1)"
+    - "Ti suggeriamo %(I1) perché ha un livello di %(E1) compatibile con te"
+    - "Ti suggeriamo %(I1) perché è piaciuto ad una persona con sensibilità a %(E1) simile alla tua"
+    - "Ti suggeriamo %(I2) perché è piaciuto ad una persona con sensibilità a %(E1) simile alla tua" # e gusti simili a te
+  
+  better_readability: true  # If true, item tokens in explanations will be wrapped in <strong> tags for better readability in the UI
+
+sequence_processor:
+  autism_sequence_processor:
+    name: autism_sequence_processor
+
+logits_processors:
+  autism_logits_processor:
+    name: autism_logits_processor
