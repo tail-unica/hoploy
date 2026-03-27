@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Request, Depends, HTTPException, status
 
-from hoploy.api.schemas.autism_schema import (
-    RecommendationRequest,
-    RecommendationResponse,
-)
+from hoploy.core.registry import PluginRegistry
+from hoploy import logger
 
 router = APIRouter()
 
@@ -13,23 +11,27 @@ def _get_service(request: Request):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service warming up")
     return service
 
-@router.post("/recommend", response_model=RecommendationResponse)
+@router.post("/recommend")
 async def get_recommendation(
-    request: RecommendationRequest,
+    request: Request,
     service = Depends(_get_service)
-) -> RecommendationResponse:
+):
     """
     Place recommendation endpoint.
     """
+    body = await request.json()
+    RequestSchema = PluginRegistry.get_schema("RecommendationRequest")
+    ResponseSchema = PluginRegistry.get_schema("RecommendationResponse")
 
-    service.logger.info(f"RecommendationRequest from {request.user_id} with preferences: {request.preferences}")
+    req = RequestSchema.model_validate(body)
+    logger.info(f"RecommendationRequest from {req.user_id}")
 
-    recommender_response = service.run(**request.model_dump())
+    result = service.run(**req.model_dump())
 
-    if not recommender_response:
+    if not result:
         raise HTTPException(
             status_code=404,
-            detail=f"No recommendations found for user {request.user_id} with the specified criteria",
+            detail="No recommendations found with the specified criteria",
         )
 
-    return RecommendationResponse(**recommender_response)
+    return ResponseSchema.model_validate(result)

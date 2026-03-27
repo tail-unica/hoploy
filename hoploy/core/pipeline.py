@@ -54,24 +54,16 @@ class Pipeline:
         """
         inputs = self.model.distill(**payload)
 
-        # NOTE: cfg.update creates a copy of the config with updated values, so we can safely call it multiple times without mutating the original config
-        model_kwargs = self.cfg.model.update(**{self.model_name: payload}).to_dict().get(self.model_name, {})
-        
-        sequence_processor_config = None
-        if self.sequence_processor is not None:
-            sequence_kwargs = self.cfg.sequence_processor.update(**{self.sequence_processor_name: payload}).to_dict().get(
-                self.sequence_processor_name,
-                {},
-            )
-            sequence_processor_config = self.sequence_processor.config(**sequence_kwargs)
-
-        self.model.config(**model_kwargs)
+        self.model.config(**payload)
         self.model.update_processors(
             logits_processors=[
-                processor.config(**self.cfg.logits_processors.update(**{name: payload}).to_dict().get(name, {}))
-                for name, processor in self.logits_processors
+                processor.config(**payload)
+                for _, processor in self.logits_processors
             ],
-            sequence_processor=sequence_processor_config
+            sequence_processor=(
+                self.sequence_processor.config(**payload)
+                if self.sequence_processor is not None else None
+            ),
         )
         
         out = self.model.recommend(inputs)

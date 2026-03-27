@@ -7,6 +7,7 @@ from hopwise.utils import PathLanguageModelingTokenType
 
 from hoploy.model.base import BaseModel
 from hoploy.core.registry import Model
+from hoploy.core.utils import hopwise_encode, hopwise_decode
 
 from hoploy import logger
 
@@ -90,10 +91,10 @@ class DefaultHopwiseWrapper(BaseModel):
 
         return self
     
-    def config(self, **kwargs):
-        """Configure runtime generation defaults from request/model parameters."""
-        recommendation_count = int(kwargs.get("recommendation_count", 5))
-        diversity_factor = float(kwargs.get("diversity_factor", 0.5))
+    def config(self, **payload):
+        """Configure runtime generation defaults from request payload."""
+        recommendation_count = int(payload.get("recommendation_count", 5))
+        diversity_factor = float(payload.get("diversity_factor", 0.5))
         self._recommendation_count = recommendation_count
         self._generation_kwargs = self._build_generation_kwargs(recommendation_count, diversity_factor)
         return self
@@ -165,47 +166,10 @@ class DefaultHopwiseWrapper(BaseModel):
         return raw_inputs
 
     def encode(self, value, token_type):
-        # Dataset IDs to hopwise IDs
-        def item():
-            # example: "55" -> "I1"
-            token_iid_list = self.dataset.field2id_token[self.dataset.iid_field]
-            return {tok: idx for idx, tok in enumerate(token_iid_list)}
-
-        def entity():
-            # example: "SensoryFeature.NOISE.2.3" -> "R789"
-            token_eid_list = self.dataset.field2id_token[self.dataset.entity_field]
-            return {tok: idx for idx, tok in enumerate(token_eid_list)}
-        
-        def relation():
-            # example: "HAS_SENSORY_FEATURE" -> "R1"
-            token_rid_list = self.dataset.field2id_token[self.dataset.relation_field]
-            return {tok: idx for idx, tok in enumerate(token_rid_list)}
-
-        def user():
-            # example: "474" -> "U42"
-            token_uid_list = self.dataset.field2id_token[self.dataset.uid_field]
-            return {tok: idx for idx, tok in enumerate(token_uid_list)}
-
-        map = {
-            PathLanguageModelingTokenType.ITEM.token: item(),
-            PathLanguageModelingTokenType.ENTITY.token: entity(),
-            PathLanguageModelingTokenType.RELATION.token: relation(),
-            PathLanguageModelingTokenType.USER.token: user(),
-        }
-
-        return token_type + str(map[token_type][value])
+        return hopwise_encode(self.dataset, value, token_type)
     
     def decode(self, token):
-        if token.startswith(PathLanguageModelingTokenType.ITEM.token):
-            token = self.dataset.field2id_token[self.dataset.iid_field][int(token[1:])]
-        elif token.startswith(PathLanguageModelingTokenType.ENTITY.token):
-            token = self.dataset.field2id_token[self.dataset.entity_field][int(token[1:])]
-        elif token.startswith(PathLanguageModelingTokenType.RELATION.token):
-            token = self.dataset.field2id_token[self.dataset.relation_field][int(token[1:])]
-        elif token.startswith(PathLanguageModelingTokenType.USER.token):
-            token = self.dataset.field2id_token[self.dataset.uid_field][int(token[1:])]
-
-        return token
+        return hopwise_decode(self.dataset, token)
 
     def expand(self, values):
         """Plugin extension point to enrich model outputs."""

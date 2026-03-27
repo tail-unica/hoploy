@@ -168,7 +168,114 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
 
         return scores
 
-    def config(self, **kwargs):
-        """Configure runtime fields while keeping tokenizer-level logic in this base class."""
-        self.set_previous_recommendations(kwargs.get("previous_recommendations"))
+    def config(self, **payload):
+        """Configure runtime fields from the raw request payload."""
+        self.set_previous_recommendations(payload.get("previous_recommendations"))
+        return self
+    
+
+@LogitsProcessor("default_restricted_logits_processor")
+class DefaultRestrictedHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProcessorWordLevel):
+    """Logits processor that applies entity/item restrictions based on hard and soft constraints."""
+
+    def __init__(self, dataset, cfg, **kwargs):
+        self.dataset = dataset
+        self.tokenized_ckg = dataset.get_tokenized_ckg()
+        self.tokenizer = dataset.tokenizer
+        self.cfg = cfg
+
+        propagate_connected_entities = bool(getattr(cfg, "propagate_connected_entities", True))
+        mask_cache_size = int(kwargs.pop("mask_cache_size", 3 * 10**4))
+        pos_candidates_cache_size = int(kwargs.pop("pos_candidates_cache_size", 1 * 10**5))
+        task = kwargs.pop("task", KnowledgeEvaluationType.REC)
+
+        super().__init__(
+            self.tokenized_ckg,
+            None,
+            None,
+            self.tokenizer,
+            mask_cache_size=mask_cache_size,
+            pos_candidates_cache_size=pos_candidates_cache_size,
+            task=task,
+            **kwargs,
+        )
+        self.propagate_connected_entities = propagate_connected_entities
+        self.tokenized_entities = [
+            v for tok, v in self.tokenizer.get_vocab().items()
+            if tok.startswith(PathLanguageModelingTokenType.ENTITY.token)
+            or tok.startswith(PathLanguageModelingTokenType.ITEM.token)
+        ]
+
+        self.current_restricted_candidates = []
+        self.current_hard_restrictions = []
+        self.current_soft_restrictions = []
+
+    def set_restrictions(self, restricted_candidates=None, hard_restrictions=None, soft_restrictions=None):
+        self.current_restricted_candidates = restricted_candidates or []
+        self.current_hard_restrictions = hard_restrictions or []
+        self.current_soft_restrictions = soft_restrictions or []
+
+    def clear_restrictions(self):
+        self.current_restricted_candidates = []
+        self.current_hard_restrictions = []
+        self.current_soft_restrictions = []
+
+    def _extract_connected_entities(self, token_id):
+        connected = set()
+        for entity_set in self.tokenized_ckg.get(token_id, {}).values():
+            connected.update(entity_set if isinstance(entity_set, (list, set)) else [entity_set])
+        return connected
+
+    def _gen_keepmask_restricted_candidates(self):
+        mask = np.zeros(len(self.tokenizer), dtype=bool)
+        if not self.current_restricted_candidates:
+            return mask
+
+        mask[self.tokenized_entities] = True
+        shared = self._extract_connected_entities(self.current_restricted_candidates[0])
+        for r_candidate in self.current_restricted_candidates[1:]:
+            if r_candidate in self.tokenized_ckg:
+                shared &= self._extract_connected_entities(r_candidate)
+        mask[self.current_restricted_candidates] = False
+        mask[list(shared)] = False
+        return mask
+
+    def _gen_banmask_from_key(self, token_id):
+        mask = np.zeros(len(self.tokenizer), dtype=bool)
+        mask[token_id] = True
+        if token_id in self.tokenized_ckg and self.propagate_connected_entities:
+            mask[list(self._extract_connected_entities(token_id))] = True
+        return mask
+
+    def __call__(self, input_ids, scores):
+        full_mask = self._gen_keepmask_restricted_candidates()
+
+        if np.all(full_mask):
+            logger.warning("Restriction mask blocks all tokens, skipping restrictions.")
+            return scores
+
+        for h_rest in self.current_hard_restrictions:
+            full_mask = np.logical_or(full_mask, self._gen_banmask_from_key(h_rest))
+
+        if np.all(full_mask):
+            logger.warning("Hard restrictions block all tokens, skipping restrictions.")
+            return scores
+
+        sorted_soft = sorted(
+            self.current_soft_restrictions,
+            key=lambda k: len(self.tokenized_ckg.get(k, [])),
+            reverse=True,
+        )
+        for s_rest in sorted_soft:
+            soft_mask = np.logical_or(full_mask, self._gen_banmask_from_key(s_rest))
+            if np.all(soft_mask):
+                break
+            full_mask = soft_mask
+
+        scores[:, full_mask] = -np.inf
+        return scores
+
+    def config(self, **payload):
+        """Configure restrictions from the raw request payload. Override in plugin for custom logic."""
+        self.clear_restrictions()
         return self

@@ -23,7 +23,7 @@ class DefaultHopwiseSequenceScorePostProcessor(BaseSequenceProcessor, Cumulative
         self.item_num = dataset.item_num
         self.topk = int(getattr(cfg, "topk", 10))
 
-    def config(self, **kwargs):
+    def config(self, **payload):
         return self
 
     def get_sequences(self, generation_outputs, user_num=1, max_new_tokens=24, previous_recommendations=None):

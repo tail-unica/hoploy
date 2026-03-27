@@ -14,12 +14,14 @@ class _InternalRegistry:
     models: Dict[str, Type[BaseModel]] = {}
     logits_processors: Dict[str, Type[BaseLogitsProcessor]] = {}
     sequence_processors: Dict[str, Type[BaseSequenceProcessor]] = {}
+    schemas: Dict[str, Type] = {}
 
     def __repr__(self):
         return (
             f"_InternalRegistry(models={list(self.models.keys())}, "
             f"logits_processors={list(self.logits_processors.keys())}, "
-            f"sequence_processors={list(self.sequence_processors.keys())})"
+            f"sequence_processors={list(self.sequence_processors.keys())}, "
+            f"schemas={list(self.schemas.keys())})"
         )
 
 # Singleton instance of the internal registry
@@ -40,6 +42,12 @@ class PluginRegistry:
             return _storage.sequence_processors[name]
         else:
             raise ValueError(f"Plugin '{name}' not found in any registry.")
+
+    @staticmethod
+    def get_schema(name: str) -> Type:
+        if name not in _storage.schemas:
+            raise ValueError(f"Schema '{name}' not found in registry.")
+        return _storage.schemas[name]
 
 
 def Model(name: str):
@@ -62,6 +70,14 @@ def SequenceProcessor(name: str):
     """ Decorator to register a sequence processor class with a given name. """
     def decorator(cls):
         _storage.sequence_processors[name] = cls
+        return cls
+    return decorator
+
+
+def ApiSchema(name: str):
+    """ Decorator to register an API schema class with a given name. """
+    def decorator(cls):
+        _storage.schemas[name] = cls
         return cls
     return decorator
 

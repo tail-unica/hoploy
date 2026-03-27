@@ -29,8 +29,9 @@ plugin:
     name: autism
     path: "plugins/autism"
     model: [autism_model]
-    logits_processors: [autism_logits_processor]
+    logits_processors: [autism_logits_processor, autism_restricted_logits_processor]
     sequence_processor: [autism_sequence_processor]
+    schema: "autism_schema"
 
 logging:
   level: "DEBUG"

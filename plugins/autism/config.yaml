@@ -33,3 +33,6 @@ sequence_processor:
 logits_processors:
   autism_logits_processor:
     name: autism_logits_processor
+  autism_restricted_logits_processor:
+    name: autism_restricted_logits_processor
+    propagate_connected_entities: false

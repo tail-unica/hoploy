@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field, PositiveInt, model_validator, RootModel
 from pydantic.config import ConfigDict
 from enum import Enum
 
+from hoploy.core.registry import ApiSchema
+
 EnumType = TypeVar("EnumType", bound=Enum)
 
 
@@ -109,6 +111,7 @@ class GeoJSON(BaseModel):
     )
 
 
+@ApiSchema("InfoRequest")
 class InfoRequest(BaseModel):
     """Request model for place information endpoint"""
 
@@ -117,6 +120,7 @@ class InfoRequest(BaseModel):
     )
 
 
+@ApiSchema("InfoResponse")
 class InfoResponse(BaseModel):
     """Response model for place information endpoint"""
 
@@ -153,6 +157,7 @@ class InfoResponse(BaseModel):
     )
 
 
+@ApiSchema("SearchRequest")
 class SearchRequest(BaseModel):
     """Request model for place search endpoint"""
 
@@ -185,6 +190,7 @@ class SearchRequest(BaseModel):
     )
 
 
+@ApiSchema("SearchResponse")
 class SearchResponse(BaseModel):
     """Response model for place search endpoint"""
 
@@ -195,7 +201,7 @@ class SearchResponse(BaseModel):
 
 # --- RECOMMENDATION: Request and Response Models ---
 
-# TODO: Add previous preferences
+@ApiSchema("RecommendationRequest")
 class RecommendationRequest(BaseModel):
     """Request model for place recommendations"""
 
@@ -266,6 +272,7 @@ class RecommendationItem(BaseModel):
     )
 
 
+@ApiSchema("RecommendationResponse")
 class RecommendationResponse(BaseModel):
     """Response model for food recommendations"""
 
