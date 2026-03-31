@@ -1,8 +1,19 @@
+import logging
+
 from .registry import PluginRegistry, load_plugin
 
-from hoploy import logger
+logger = logging.getLogger(__name__)
 
-class Pipeline:
+class Pipe:
+    """Request-processing pipeline.
+
+    Loads plugins, instantiates the wrapper and all processors at
+    construction time, then orchestrates them on each call to :meth:`run`.
+
+    :param cfg: The full application :class:`~hoploy.core.config.Config`.
+    :type cfg: Config
+    """
+
     def __init__(self, cfg):
         self.cfg = cfg
         self._ready = False
@@ -10,69 +21,66 @@ class Pipeline:
         for plugin_cfg in self.cfg.plugin.raw.values():
             load_plugin(plugin_cfg)
         
-        # Model initialization
-        logger.info("Initializing model")
-        self.model_name, model_cfg = list(self.cfg.model.raw.items())[0]
-        self.model = PluginRegistry.get(model_cfg.name)(model_cfg)
+        # Wrapper initialization
+        logger.info("Initializing wrapper")
+        wrapper_cfg = next(iter(self.cfg.wrapper))
+        self.wrapper = PluginRegistry.get(wrapper_cfg.name)(wrapper_cfg)
 
         # Logits processor initialization
         logger.info("Initializing logits processors")
         self.logits_processors = []
-        for name, processor_cfg in self.cfg.logits_processors.raw.items():
+        for processor_cfg in self.cfg.logits_processors:
             processor = PluginRegistry.get(processor_cfg.name)(
-                dataset=self.model.dataset,
+                dataset=self.wrapper.dataset,
                 cfg=processor_cfg,
             )
-            self.logits_processors.append((name, processor))
+            self.logits_processors.append(processor)
 
         # Sequence processor initialization
         logger.info("Initializing sequence processor")
-        sequence_items = list(self.cfg.sequence_processor.raw.items())
-        if sequence_items:
-            self.sequence_processor_name, sequence_cfg = sequence_items[0]
+        self.sequence_processor = next(iter(self.cfg.sequence_processor), None)
+        if self.sequence_processor is not None:
+            sequence_cfg = self.sequence_processor
             self.sequence_processor = PluginRegistry.get(sequence_cfg.name)(
-                dataset=self.model.dataset,
+                dataset=self.wrapper.dataset,
                 cfg=sequence_cfg,
             )
-        else:
-            self.sequence_processor = None
 
         self._ready = True
 
     def is_ready(self) -> bool:
+        """Return ``True`` when the pipeline is fully initialised."""
         return self._ready
 
     async def shutdown(self):
+        """Mark the pipeline as unavailable."""
         self._ready = False
 
-    def run(self, **payload):
-        """
-        Run the pipeline with the given input arguments.
+    def run(self, request):
+        """Execute the full recommendation pipeline.
 
-        :param payload: API request parameters
-        :type payload: dict
+        :param request: A :class:`~hoploy.core.config.Config` wrapping the
+            API request payload.
+        :type request: Config
+        :returns: The enriched response dict produced by
+            :meth:`~hoploy.components.wrappers.base.BaseWrapper.expand`.
+        :rtype: dict
         """
-        inputs = self.model.distill(**payload)
+        inputs = self.wrapper.distill(request)
 
-        self.model.config(**payload)
-        self.model.update_processors(
+        self.wrapper.handle(request)
+        self.wrapper.update_processors(
             logits_processors=[
-                processor.config(**payload)
-                for _, processor in self.logits_processors
+                processor.handle(request)
+                for processor in self.logits_processors
             ],
             sequence_processor=(
-                self.sequence_processor.config(**payload)
+                self.sequence_processor.handle(request)
                 if self.sequence_processor is not None else None
             ),
         )
         
-        out = self.model.recommend(inputs)
-        logger.debug(f"Model output: {out}")
+        out = self.wrapper.recommend(inputs)
+        logger.debug(f"Wrapper output: {out}")
 
-        return self.model.expand(out)
-    
-    async def info(self, **kwargs):
-        return None
-
-    async def search(self, **kwargs):
-        return None
+        return self.wrapper.expand(out, request)

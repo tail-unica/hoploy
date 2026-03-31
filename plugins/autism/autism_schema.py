@@ -3,7 +3,8 @@ from pydantic import BaseModel, Field, PositiveInt, model_validator, RootModel
 from pydantic.config import ConfigDict
 from enum import Enum
 
-from hoploy.core.registry import ApiSchema
+from hoploy import Request, Response
+
 
 EnumType = TypeVar("EnumType", bound=Enum)
 
@@ -11,7 +12,7 @@ EnumType = TypeVar("EnumType", bound=Enum)
 # --- Enums ---
 
 class SensoryFeatures(str, Enum):
-    """Enum for sensory features levels"""
+    """Sensory feature levels."""
 
     LIGHT = "light"
     SPACE = "space"
@@ -21,7 +22,7 @@ class SensoryFeatures(str, Enum):
 
 
 class IdiosyncraticAversions(str, Enum):
-    """Enum for idiosyncratic aversions levels"""
+    """Idiosyncratic aversion levels."""
 
     BRIGHT_LIGHT = "bright_light"
     DIM_LIGHT = "dim_light"
@@ -35,7 +36,7 @@ class IdiosyncraticAversions(str, Enum):
 # --- Generic Sensory Feature Set ---
 
 class Feature(BaseModel, Generic[EnumType]):
-    """Sensory feature rating for an item"""
+    """A single sensory feature with its rating."""
 
     feature_name: EnumType = Field(
         description="Name of the sensory feature",
@@ -50,7 +51,7 @@ class Feature(BaseModel, Generic[EnumType]):
 
 
 class FeatureSet(RootModel[List[Feature[EnumType]]], Generic[EnumType]):
-    """Set of sensory features with ratings"""
+    """Validated set of sensory features with ratings."""
 
     root: List[Feature[EnumType]] = Field(
         description="List of sensory features with their ratings",
@@ -64,6 +65,13 @@ class FeatureSet(RootModel[List[Feature[EnumType]]], Generic[EnumType]):
 
     @model_validator(mode="after")
     def validate_features(self) -> "FeatureSet[EnumType]":
+        """Ensure all required features are provided with no extras.
+
+        :returns: The validated feature set.
+        :rtype: FeatureSet
+        :raises ValueError: If required features are missing or
+            unexpected features are present.
+        """
         if not self.root:
             raise ValueError("At least one feature must be provided.")
 
@@ -90,7 +98,7 @@ class FeatureSet(RootModel[List[Feature[EnumType]]], Generic[EnumType]):
 # --- INFO: Request and Response Models ---
 
 class GeoJSON(BaseModel):
-    """GeoJSON Feature model for representing geographical positions"""
+    """GeoJSON Feature for representing geographical positions."""
 
     type: str = Field(
         default="Feature",
@@ -111,18 +119,18 @@ class GeoJSON(BaseModel):
     )
 
 
-@ApiSchema("InfoRequest")
+@Request("info")
 class InfoRequest(BaseModel):
-    """Request model for place information endpoint"""
+    """Request model for the place information endpoint."""
 
-    place: str = Field(
+    item: str = Field(
         description="Name of the place to get information about", example="Mole Antonelliana"
     )
 
 
-@ApiSchema("InfoResponse")
+@Response("info")
 class InfoResponse(BaseModel):
-    """Response model for place information endpoint"""
+    """Response model for the place information endpoint."""
 
     place: str = Field(
         description="Name of the place", example="Mole Antonelliana"
@@ -157,9 +165,9 @@ class InfoResponse(BaseModel):
     )
 
 
-@ApiSchema("SearchRequest")
+@Request("search")
 class SearchRequest(BaseModel):
-    """Request model for place search endpoint"""
+    """Request model for the place search endpoint."""
 
     query: str = Field(
         description="Search query string", example="Museo"
@@ -190,9 +198,9 @@ class SearchRequest(BaseModel):
     )
 
 
-@ApiSchema("SearchResponse")
+@Response("search")
 class SearchResponse(BaseModel):
-    """Response model for place search endpoint"""
+    """Response model for the place search endpoint."""
 
     results: List[InfoResponse] = Field(
         description="List of places matching the search criteria"
@@ -201,9 +209,9 @@ class SearchResponse(BaseModel):
 
 # --- RECOMMENDATION: Request and Response Models ---
 
-@ApiSchema("RecommendationRequest")
+@Request("recommend")
 class RecommendationRequest(BaseModel):
-    """Request model for place recommendations"""
+    """Request model for place recommendations."""
 
     user_id: str = Field(
         description="Unique identifier for the user", 
@@ -255,7 +263,7 @@ class RecommendationRequest(BaseModel):
 
 
 class RecommendationItem(BaseModel):
-    """Individual recommendation item with score and metadata"""
+    """Individual recommendation item with score and metadata."""
 
     place: str = Field(description="Name of the recommended place", example="Egyptian Museum")
     score: float = Field(
@@ -272,9 +280,9 @@ class RecommendationItem(BaseModel):
     )
 
 
-@ApiSchema("RecommendationResponse")
+@Response("recommend")
 class RecommendationResponse(BaseModel):
-    """Response model for food recommendations"""
+    """Response model for place recommendations."""
 
     user_id: str = Field(description="Unique identifier for the user", example="12345")
     recommendations: list[RecommendationItem] = Field(

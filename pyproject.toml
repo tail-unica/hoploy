@@ -92,4 +92,4 @@ indent-style = "space"
 line-ending = "auto"
 
 [tool.ruff.lint.pydocstyle]
-convention = "google"
+convention = "pep257"

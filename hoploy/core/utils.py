@@ -6,27 +6,69 @@ import pathlib
 from hopwise.utils import PathLanguageModelingTokenType
 
 
+_encode_lookup_cache: dict[int, dict[str, dict[str, int]]] = {}
+
+
+def _get_encode_lookup(dataset, token_type):
+    """Return a cached ``{value: index}`` dict for the given token type.
+
+    :param dataset: The Hopwise dataset instance.
+    :param token_type: One of the ``PathLanguageModelingTokenType`` token prefixes.
+    :type token_type: str
+    :returns: Mapping from dataset value to internal index.
+    :rtype: dict[str, int]
+    """
+    ds_id = id(dataset)
+    if ds_id not in _encode_lookup_cache:
+        _encode_lookup_cache[ds_id] = {}
+    cache = _encode_lookup_cache[ds_id]
+    if token_type not in cache:
+        field_map = {
+            PathLanguageModelingTokenType.ITEM.token: dataset.iid_field,
+            PathLanguageModelingTokenType.ENTITY.token: dataset.entity_field,
+            PathLanguageModelingTokenType.RELATION.token: dataset.relation_field,
+            PathLanguageModelingTokenType.USER.token: dataset.uid_field,
+        }
+        field = field_map[token_type]
+        cache[token_type] = {
+            tok: idx for idx, tok in enumerate(dataset.field2id_token[field])
+        }
+    return cache[token_type]
+
+
 def hopwise_encode(dataset, value, token_type):
-    """Encode a dataset ID to a hopwise token string (e.g. "55" -> "I1")."""
-    lookups = {
-        PathLanguageModelingTokenType.ITEM.token: lambda: {
-            tok: idx for idx, tok in enumerate(dataset.field2id_token[dataset.iid_field])
-        },
-        PathLanguageModelingTokenType.ENTITY.token: lambda: {
-            tok: idx for idx, tok in enumerate(dataset.field2id_token[dataset.entity_field])
-        },
-        PathLanguageModelingTokenType.RELATION.token: lambda: {
-            tok: idx for idx, tok in enumerate(dataset.field2id_token[dataset.relation_field])
-        },
-        PathLanguageModelingTokenType.USER.token: lambda: {
-            tok: idx for idx, tok in enumerate(dataset.field2id_token[dataset.uid_field])
-        },
-    }
-    return token_type + str(lookups[token_type]()[value])
+    """Encode a dataset ID to a Hopwise token string.
+
+    Example: ``"55"`` → ``"I1"``.
+
+    :param dataset: The Hopwise dataset instance.
+    :param value: The raw dataset ID (e.g. a POI id string).
+    :param token_type: Token prefix (e.g. ``PathLanguageModelingTokenType.ITEM.token``).
+    :type token_type: str
+    :returns: The encoded token string.
+    :rtype: str
+    """
+    return token_type + str(_get_encode_lookup(dataset, token_type)[value])
 
 
-def hopwise_decode(dataset, token):
-    """Decode a hopwise token string back to a dataset ID (e.g. "I1" -> "55")."""
+def hopwise_decode(dataset, token, real_token=False):
+    """Decode a Hopwise token string back to a dataset ID.
+
+    Example: ``"I1"`` → ``"55"``.
+
+    :param dataset: The Hopwise dataset instance.
+    :param token: The encoded token string.
+    :type token: str
+    :param real_token: If ``True``, resolve item tokens to their
+        human-readable name instead of the raw ID.
+    :type real_token: bool
+    :returns: The decoded dataset value.
+    :rtype: str
+    """
+    if token.startswith(PathLanguageModelingTokenType.ITEM.token) and real_token:
+        iid = int(token[1:])
+        name_field = dataset.field2id_token["name"][dataset.item_feat[iid]["name"]]
+        return " ".join(n for n in name_field if n != "[PAD]")
     if token.startswith(PathLanguageModelingTokenType.ITEM.token):
         return dataset.field2id_token[dataset.iid_field][int(token[1:])]
     elif token.startswith(PathLanguageModelingTokenType.ENTITY.token):
@@ -40,8 +82,15 @@ def hopwise_decode(dataset, token):
 
 def id2tokenizer_token(dataset, ids, token_type):
     """Convert a list of dataset IDs to tokenizer token IDs.
-    
-    :param token_type: One of 'item', 'entity', 'relation', 'user'
+
+    :param dataset: The Hopwise dataset instance.
+    :param ids: Dataset-level identifiers to convert.
+    :type ids: list
+    :param token_type: One of ``'item'``, ``'entity'``, ``'relation'``,
+        ``'user'``.
+    :type token_type: str
+    :returns: List of integer token IDs recognised by the tokenizer.
+    :rtype: list[int]
     """
     type_map = {
         "item": PathLanguageModelingTokenType.ITEM.token,
@@ -62,6 +111,10 @@ def id2tokenizer_token(dataset, ids, token_type):
 
 
 class CustomFormatter(logging.Formatter):
+    """ANSI-coloured log formatter.
+
+    Applies terminal colour codes based on the log level.
+    """
     # Use standard ANSI color codes to ensure terminal support
     grey = "\x1b[90m"
     yellow = "\x1b[33m"
@@ -87,10 +140,17 @@ class CustomFormatter(logging.Formatter):
 
 @lru_cache(maxsize=1)
 def get_logger(cfg) -> logging.Logger:
+    """Create (or return the cached) root ``hoploy`` logger.
+
+    :param cfg: Logging configuration section with ``level`` and ``format``.
+    :type cfg: ~hoploy.core.config.Config
+    :returns: A configured :class:`logging.Logger`.
+    :rtype: logging.Logger
+    """
     logfile = pathlib.Path("logs") / f"core-{datetime.datetime.now().strftime('%b-%d-%Y_%H-%M-%S')}.log"
     logfile.parent.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger("AutismRecsysAPI")
+    logger = logging.getLogger("hoploy")
     logger.setLevel(cfg.level)
 
     if not logger.handlers:

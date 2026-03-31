@@ -19,5 +19,4 @@ COPY . .
 RUN uv sync
 
 # Run through the project CLI entrypoint
-CMD ["uv", "run", "python", "-O", "-m", "hoploy.cli"]
-# CMD ["uv", "run", "python", "-O", "-m", "uvicorn", "hoploy.api.app:app", "--log-level", "debug", "--host", "0.0.0.0", "--port", "8100"]
+CMD ["uv", "run", "python", "-O", "-m", "uvicorn", "hoploy.main:app", "--log-level", "debug", "--host", "0.0.0.0", "--port", "8100"]

@@ -1,9 +1,8 @@
 import numpy as np
 from numpy import arange
 
-from hoploy.sequence_processors.default import DefaultHopwiseSequenceScorePostProcessor
-from hoploy.logits_processors.default import DefaultHopwiseLogitsProcessor, DefaultRestrictedHopwiseLogitsProcessor
-from hoploy.core.registry import SequenceProcessor, LogitsProcessor
+from hoploy.components import DefaultHopwiseSequenceScorePostProcessor, DefaultHopwiseLogitsProcessor, DefaultRestrictedHopwiseLogitsProcessor
+from hoploy.registry import SequenceProcessor, LogitsProcessor
 from hoploy.core.utils import hopwise_encode, id2tokenizer_token
 
 from hoploy import logger
@@ -20,6 +19,15 @@ sensory_features_map: dict[str, list[str]] = {
 
 
 def user_feature_compatibility(aversions: dict[str, float], features: dict[str, float]) -> dict[str, bool]:
+    """Determine per-feature sensory compatibility for a user.
+
+    :param aversions: User's sensory aversion ratings keyed by sub-feature.
+    :type aversions: dict[str, float]
+    :param features: Item's sensory feature values keyed by feature name.
+    :type features: dict[str, float]
+    :returns: Map of feature name to compatibility boolean.
+    :rtype: dict[str, bool]
+    """
     INDIVIDUAL_COMPATIBILITY_THRESHOLD = 3
 
     def _aversion_high(ft_value, ua):
@@ -44,7 +52,16 @@ def user_feature_compatibility(aversions: dict[str, float], features: dict[str, 
 
 
 def user_feature_mask(aversions: dict[str, float]) -> list[str]:
-    """Non-compatible sensory features as entity names (e.g. 'SensoryFeature.NOISE.2.3')."""
+    """Return non-compatible sensory features as entity names.
+
+    Iterates over the full Likert range and collects every feature
+    value that is incompatible with the user's aversions.
+
+    :param aversions: User's sensory aversion ratings.
+    :type aversions: dict[str, float]
+    :returns: Entity names, e.g. ``'SensoryFeature.NOISE.2.3'``.
+    :rtype: list[str]
+    """
     LIKERT_STEP = 0.1
     LIKERT_RANGE = arange(1.0, 5.0 + LIKERT_STEP, LIKERT_STEP)
     non_compatible = set()
@@ -57,7 +74,15 @@ def user_feature_mask(aversions: dict[str, float]) -> list[str]:
 
 
 def user_sample_compatible_features(aversions: dict[str, float]) -> list[str]:
-    """Sample one compatible sensory value per feature, biased towards the middle of the range."""
+    """Sample one compatible sensory value per feature.
+
+    Values are biased towards the middle of the compatible range.
+
+    :param aversions: User's sensory aversion ratings.
+    :type aversions: dict[str, float]
+    :returns: Entity names, e.g. ``'SensoryFeature.LIGHT.3.0'``.
+    :rtype: list[str]
+    """
     LIKERT_STEP = 0.1
     LIKERT_RANGE = np.arange(1.0, 5.0 + LIKERT_STEP, LIKERT_STEP)
 
@@ -87,20 +112,36 @@ def user_sample_compatible_features(aversions: dict[str, float]) -> list[str]:
 
 @SequenceProcessor("autism_sequence_processor")
 class AutismSequenceProcessor(DefaultHopwiseSequenceScorePostProcessor):
+    """Autism-specific sequence score post-processor."""
     def __init__(self, dataset, cfg, **kwargs):
         super().__init__(dataset, cfg, **kwargs)
 
 
 @LogitsProcessor("autism_logits_processor")
 class AutismLogitsProcessor(DefaultHopwiseLogitsProcessor):
+    """Autism-specific logits processor.
+
+    Extends the default processor to merge user preferences into
+    previous recommendations, preventing the model from re-recommending
+    already-known places.
+    """
     def __init__(self, dataset, cfg, **kwargs):
         super().__init__(dataset, cfg, **kwargs)
 
-    def config(self, **payload):
-        """Set previous_recommendations from the payload, converting dataset IDs to tokenizer IDs."""
-        prev = payload.get("previous_recommendations")
-        if prev:
-            token_ids = id2tokenizer_token(self.dataset, prev, "item")
+    def handle(self, request):
+        """Set previous recommendations from the request.
+
+        Preferences are merged in so already-known places are excluded.
+
+        :param request: Incoming recommendation request.
+        :type request: Config
+        :returns: Self.
+        :rtype: AutismLogitsProcessor
+        """
+        prev_names = list(getattr(request, "previous_recommendations", None) or [])
+        prev_names.extend(request.preferences)
+        if prev_names:
+            token_ids = id2tokenizer_token(self.dataset, prev_names, "item")
             self.set_previous_recommendations(token_ids)
         else:
             self.set_previous_recommendations(None)
@@ -109,18 +150,29 @@ class AutismLogitsProcessor(DefaultHopwiseLogitsProcessor):
 
 @LogitsProcessor("autism_restricted_logits_processor")
 class AutismRestrictedLogitsProcessor(DefaultRestrictedHopwiseLogitsProcessor):
+    """Autism-specific restricted logits processor.
+
+    Computes hard token restrictions from the user's sensory aversions
+    so the model cannot generate incompatible features.
+    """
     def __init__(self, dataset, cfg, **kwargs):
         super().__init__(dataset, cfg, **kwargs)
 
-    def config(self, **payload):
-        """Compute hard restrictions from aversions in the payload."""
+    def handle(self, request):
+        """Compute hard restrictions from the user's aversions.
+
+        :param request: Incoming recommendation request.
+        :type request: Config
+        :returns: Self.
+        :rtype: AutismRestrictedLogitsProcessor
+        """
         self.clear_restrictions()
-        aversions = payload.get("aversions")
+        aversions = getattr(request, "aversions", None)
         if not aversions:
             return self
 
         # aversions come from the schema as a list of dicts [{feature_name, rating}, ...]
-        if isinstance(aversions, list):
+        if not isinstance(aversions, dict):
             aversions = {a["feature_name"]: a["rating"] for a in aversions}
 
         hard_features = user_feature_mask(aversions)

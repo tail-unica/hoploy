@@ -3,8 +3,8 @@ services:
     build:
       context: .
     image: hoploy:latest
-    # ports:
-    #  - "8000:8000"
+    ports:
+      - "8102:8100"
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all

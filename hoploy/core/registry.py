@@ -1,27 +1,20 @@
 import importlib
 import pathlib
 import sys
-from typing import Type, Dict
 
-from hoploy.model.base import BaseModel
-from hoploy.logits_processors.base import BaseLogitsProcessor
-from hoploy.sequence_processors.base import BaseSequenceProcessor
 
 class _InternalRegistry:
-    """
-    Internal registry class to hold all registered components.
-    """
-    models: Dict[str, Type[BaseModel]] = {}
-    logits_processors: Dict[str, Type[BaseLogitsProcessor]] = {}
-    sequence_processors: Dict[str, Type[BaseSequenceProcessor]] = {}
-    schemas: Dict[str, Type] = {}
+    """Central store for all registered components."""
+
+    wrappers: dict[str, type] = {}
+    logits_processors: dict[str, type] = {}
+    sequence_processors: dict[str, type] = {}
 
     def __repr__(self):
         return (
-            f"_InternalRegistry(models={list(self.models.keys())}, "
+            f"_InternalRegistry(wrappers={list(self.wrappers.keys())}, "
             f"logits_processors={list(self.logits_processors.keys())}, "
-            f"sequence_processors={list(self.sequence_processors.keys())}, "
-            f"schemas={list(self.schemas.keys())})"
+            f"sequence_processors={list(self.sequence_processors.keys())})"
         )
 
 # Singleton instance of the internal registry
@@ -29,13 +22,22 @@ _storage = _InternalRegistry()
 
 
 class PluginRegistry:
-    """
-    Central registry class to access registered components.
+    """Central registry for looking up registered components by name.
+
+    Components are registered via the :func:`Wrapper`,
+    :func:`LogitsProcessor` and :func:`SequenceProcessor` decorators.
     """
     @staticmethod
     def get(name: str):
-        if name in _storage.models:
-            return _storage.models[name]
+        """Retrieve a registered component class by *name*.
+
+        :param name: The registration name of the component.
+        :type name: str
+        :returns: The registered class.
+        :raises ValueError: If *name* is not found in any registry.
+        """
+        if name in _storage.wrappers:
+            return _storage.wrappers[name]
         elif name in _storage.logits_processors:
             return _storage.logits_processors[name]
         elif name in _storage.sequence_processors:
@@ -43,23 +45,25 @@ class PluginRegistry:
         else:
             raise ValueError(f"Plugin '{name}' not found in any registry.")
 
-    @staticmethod
-    def get_schema(name: str) -> Type:
-        if name not in _storage.schemas:
-            raise ValueError(f"Schema '{name}' not found in registry.")
-        return _storage.schemas[name]
 
+def Wrapper(name: str):
+    """Decorator to register a model wrapper class under *name*.
 
-def Model(name: str):
-    """ Decorator to register a model class with a given name. """
+    :param name: Unique registration key.
+    :type name: str
+    """
     def decorator(cls):
-        _storage.models[name] = cls
+        _storage.wrappers[name] = cls
         return cls
     return decorator
 
 
 def LogitsProcessor(name: str):
-    """ Decorator to register a logits processor class with a given name. """
+    """Decorator to register a logits processor class under *name*.
+
+    :param name: Unique registration key.
+    :type name: str
+    """
     def decorator(cls):
         _storage.logits_processors[name] = cls
         return cls
@@ -67,25 +71,26 @@ def LogitsProcessor(name: str):
 
 
 def SequenceProcessor(name: str):
-    """ Decorator to register a sequence processor class with a given name. """
+    """Decorator to register a sequence processor class under *name*.
+
+    :param name: Unique registration key.
+    :type name: str
+    """
     def decorator(cls):
         _storage.sequence_processors[name] = cls
         return cls
     return decorator
 
 
-def ApiSchema(name: str):
-    """ Decorator to register an API schema class with a given name. """
-    def decorator(cls):
-        _storage.schemas[name] = cls
-        return cls
-    return decorator
-
-
 def load_plugin(plugin_config: dict):
-    """
-    Scans the directory for .py files and imports them.
-    This triggers the @register decorators inside those files.
+    """Import all Python modules in a plugin directory.
+
+    Importing the modules triggers the ``@Wrapper``, ``@LogitsProcessor``
+    and ``@SequenceProcessor`` registration decorators.
+
+    :param plugin_config: A dict with ``"path"`` or ``"name"`` keys
+        pointing to the plugin directory.
+    :type plugin_config: dict
     """
     if plugin_config.get("path"):
         plugin_path = pathlib.Path(plugin_config.get("path"))
