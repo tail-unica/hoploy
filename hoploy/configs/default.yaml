@@ -25,19 +25,7 @@ sequence_processor:
     name: default_cumulative_sequence_processor
 
 plugin:
-  autism:
-    name: autism
-    path: "plugins/autism"
-    wrapper: [autism_model]
-    logits_processors: [autism_logits_processor, autism_restricted_logits_processor]
-    sequence_processor: [autism_sequence_processor]
-    schema:
-      module: autism_schema
-      get:
-        info: autism_model.info
-      post:
-        recommend: run 
-        search: autism_model.search
+  - "plugins/autism"
 
 logging:
   level: "DEBUG"

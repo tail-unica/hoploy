@@ -1,7 +1,7 @@
 import numpy as np
 from numpy import arange
 
-from hoploy.components import DefaultHopwiseSequenceScorePostProcessor, DefaultHopwiseLogitsProcessor, DefaultRestrictedHopwiseLogitsProcessor
+from hoploy.components import DefaultHopwiseSequenceScorePostProcessor, ForcedLogitsProcessor, ForcedSequenceScorePostProcessor, RestrictedHopwiseLogitsProcessor
 from hoploy.registry import SequenceProcessor, LogitsProcessor
 from hoploy.core.utils import hopwise_encode, id2tokenizer_token
 
@@ -111,17 +111,23 @@ def user_sample_compatible_features(aversions: dict[str, float]) -> list[str]:
 # ---- Plugin processors ----
 
 @SequenceProcessor("autism_sequence_processor")
-class AutismSequenceProcessor(DefaultHopwiseSequenceScorePostProcessor):
-    """Autism-specific sequence score post-processor."""
+class AutismSequenceProcessor(ForcedSequenceScorePostProcessor):
+    """Autism-specific sequence score post-processor.
+
+    Extends :class:`~hoploy.components.processors.forced_sequence_processor.ForcedSequenceScorePostProcessor`
+    to apply forced relation-path filtering and per-type diversity boosting
+    as configured in the plugin's ``sequence_processor`` config section.
+    """
+
     def __init__(self, dataset, cfg, **kwargs):
         super().__init__(dataset, cfg, **kwargs)
 
 
 @LogitsProcessor("autism_logits_processor")
-class AutismLogitsProcessor(DefaultHopwiseLogitsProcessor):
+class AutismLogitsProcessor(ForcedLogitsProcessor):
     """Autism-specific logits processor.
 
-    Extends the default processor to merge user preferences into
+    Extends the forced-path processor to merge user preferences into
     previous recommendations, preventing the model from re-recommending
     already-known places.
     """
@@ -132,12 +138,14 @@ class AutismLogitsProcessor(DefaultHopwiseLogitsProcessor):
         """Set previous recommendations from the request.
 
         Preferences are merged in so already-known places are excluded.
+        Force paths are handled by the parent.
 
         :param request: Incoming recommendation request.
         :type request: Config
         :returns: Self.
         :rtype: AutismLogitsProcessor
         """
+        super().handle(request)
         prev_names = list(getattr(request, "previous_recommendations", None) or [])
         prev_names.extend(request.preferences)
         if prev_names:
@@ -149,7 +157,7 @@ class AutismLogitsProcessor(DefaultHopwiseLogitsProcessor):
 
 
 @LogitsProcessor("autism_restricted_logits_processor")
-class AutismRestrictedLogitsProcessor(DefaultRestrictedHopwiseLogitsProcessor):
+class AutismRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
     """Autism-specific restricted logits processor.
 
     Computes hard token restrictions from the user's sensory aversions

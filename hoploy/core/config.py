@@ -4,45 +4,69 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from hydra import compose, initialize_config_dir
-from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CONFIG_DIR = PROJECT_ROOT / "configs"
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / "hoploy" / "configs" / "default.yaml"
 
 FILTERABLE_SECTIONS = ("wrapper", "logits_processors", "sequence_processor")
 
 
-def _merge_plugin_configs(config: DictConfig) -> DictConfig:
+def _merge_plugin_configs(config: DictConfig, plugin_paths: tuple[str, ...]) -> DictConfig:
     """Merge plugin configs and filter sections by component name.
 
-    Loads each plugin's ``config.yaml``, merges it into the main config
-    (overriding by key), then filters filterable sections to keep only
-    entries whose ``name`` appears in the plugin's allow-list.
+    Each plugin's ``config.yaml`` must contain a ``plugin:`` section with
+    metadata (name, wrapper allow-list, processors, schema, …).  The
+    remaining top-level keys (wrapper definitions, processor definitions,
+    etc.) are merged into the main config, and filterable sections are
+    trimmed to keep only entries listed in the plugin's allow-list.
 
     :param config: The base application configuration.
     :type config: DictConfig
+    :param plugin_paths: Paths to plugin directories (relative to project root).
+    :type plugin_paths: tuple[str, ...]
     :returns: The merged and filtered configuration.
     :rtype: DictConfig
     """
-    if "plugin" not in config or not isinstance(config.plugin, DictConfig):
-        return config
+    if plugin_paths:
+        paths = plugin_paths
+    else:
+        raw_list = config.get("plugin")
+        if isinstance(raw_list, (list, ListConfig)):
+            paths = tuple(str(p) for p in raw_list)
+        else:
+            paths = ()
 
-    for plugin_name, plugin_cfg in config.plugin.items():
-        if not isinstance(plugin_cfg, DictConfig):
+    merged_plugins: dict[str, Any] = {}
+
+    for plugin_path_str in paths:
+        plugin_path = PROJECT_ROOT / str(plugin_path_str)
+        plugin_config_file = plugin_path / "config.yaml"
+        if not plugin_config_file.exists():
             continue
 
-        # Load and merge plugin's config.yaml — overrides default values by matching keys
-        plugin_path = (PROJECT_ROOT / plugin_cfg.path if "path" in plugin_cfg
-                       else PROJECT_ROOT / "plugins" / plugin_name)
-        plugin_config_file = plugin_path / "config.yaml"
-        if plugin_config_file.exists():
-            config = OmegaConf.merge(config, OmegaConf.load(str(plugin_config_file)))
+        plugin_file_config = OmegaConf.load(str(plugin_config_file))
+
+        # Extract plugin metadata from the plugin's own config.yaml
+        plugin_meta = plugin_file_config.get("plugin")
+        if not isinstance(plugin_meta, DictConfig):
+            continue
+        plugin_name = str(plugin_meta.get("name", plugin_path.name))
+
+        # Store metadata with path for pipeline / factory consumption
+        meta_dict = OmegaConf.to_container(plugin_meta, resolve=False)
+        meta_dict["path"] = str(plugin_path_str)
+        merged_plugins[plugin_name] = meta_dict
+
+        # Merge non-plugin sections (wrapper defs, processor defs, …)
+        merge_sections = OmegaConf.create({
+            k: v for k, v in plugin_file_config.items() if k != "plugin"
+        })
+        config = OmegaConf.merge(config, merge_sections)
 
         # Filter each section: keep only entries whose `name` matches the allowed list
         for section in FILTERABLE_SECTIONS:
-            allowed = plugin_cfg.get(section)
+            allowed = plugin_meta.get(section)
             if not isinstance(allowed, (list, ListConfig)):
                 continue
             allowed_names = {str(n) for n in allowed}
@@ -52,20 +76,16 @@ def _merge_plugin_configs(config: DictConfig) -> DictConfig:
                     if isinstance(entry, DictConfig) and str(entry.get("name", "")) in allowed_names
                 })
 
-    return config
+    # Replace the raw plugin list/section with the collected metadata dict
+    config_dict = OmegaConf.to_container(config, resolve=False)
+    config_dict["plugin"] = merged_plugins
+    return OmegaConf.create(config_dict)
 
 
 @lru_cache(maxsize=8)
-def _load_raw_config(config_path: str | None = None) -> DictConfig:
-    if config_path:
-        config = OmegaConf.load(config_path)
-    else:
-        if GlobalHydra.instance().is_initialized():
-            GlobalHydra.instance().clear()
-        with initialize_config_dir(config_dir=str(CONFIG_DIR), version_base=None):
-            config = compose(config_name="default")
-
-    config = _merge_plugin_configs(config)
+def _load_raw_config(plugin_paths: tuple[str, ...] = ()) -> DictConfig:
+    config = OmegaConf.load(str(DEFAULT_CONFIG_PATH))
+    config = _merge_plugin_configs(config, plugin_paths)
     return config
 
 
@@ -77,17 +97,21 @@ class Config:
 
     Usage::
 
-        config = Config("configs/default.yaml")
-        config.model          # section accessor
+        config = Config("plugins/autism")
+        config.wrapper        # section accessor
         config.plugin.raw     # underlying DictConfig
         new_cfg = config.update(other_config)
+
+    The path to ``default.yaml`` is fixed in this module.  Each positional
+    argument is a plugin directory (relative to the project root) whose
+    ``config.yaml`` will be loaded and merged automatically.
     """
 
-    def __init__(self, config_path: str | None = None, *, _raw: DictConfig | None = None):
+    def __init__(self, *plugin_paths: str, _raw: DictConfig | None = None):
         if _raw is not None:
             self._config = _raw
         else:
-            base = _load_raw_config(config_path)
+            base = _load_raw_config(plugin_paths)
             self._config = OmegaConf.create(OmegaConf.to_container(base, resolve=False))
 
     # -- mutation helpers ---------------------------------------------------

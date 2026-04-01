@@ -1,3 +1,16 @@
+plugin:
+  name: autism
+  wrapper: [autism_model]
+  logits_processors: [autism_logits_processor, autism_restricted_logits_processor]
+  sequence_processor: [autism_sequence_processor]
+  schema:
+    module: autism_schema
+    get:
+      info: autism_model.info
+    post:
+      recommend: run
+      search: autism_model.search
+
 wrapper:
   kgglm:
     name: autism_model
@@ -40,6 +53,12 @@ sequence_processor:
 logits_processors:
   autism_logits_processor:
     name: autism_logits_processor
+    force_paths:
+      - ['HAS_SENSORY_FEATURE', 'HAS_SENSORY_FEATURE_r'] # type 2. [I] [HAS_SENSORY_FEATURE] [E: sensory_feature] [HAS_SENSORY_FEATURE_r] [I]
+      - ['[UI-Relation]', '[UI-Relation]'] # type 4. [I] [UI-Relation] [U] [UI-Relation] [I]
+      - ['HAS_SENSORY_FEATURE_r'] # type 6. [E: sensory_feature] [HAS_SENSORY_FEATURE_r] [I]
+      - ['HAS_SENSORY_COMPATIBILITY_r', '[UI-Relation]'] # TYPE 7. [E: sensory_feature] [HAS_SENSORY_COMPATIBILITY_r] [U] [UI-Relation] [I]
+      - ['HAS_SENSORY_FEATURE', 'HAS_SENSORY_FEATURE_r', '[UI-Relation]'] # TYPE 7 (variance)
   autism_restricted_logits_processor:
     name: autism_restricted_logits_processor
     propagate_connected_entities: false

@@ -6,7 +6,7 @@ from hoploy.core.pipeline import Pipe
 from hoploy.core.factory import factory, Request, Response
 from hoploy.core.utils import get_logger
 
-logger = get_logger(Config("configs/default.yaml").logging)
+logger = get_logger(Config().logging)
 
 __all__ = [
     "registry",

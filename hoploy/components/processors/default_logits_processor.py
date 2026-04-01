@@ -7,9 +7,55 @@ from hopwise.utils import KnowledgeEvaluationType, PathLanguageModelingTokenType
 
 from hoploy.core.registry import LogitsProcessor
 from hoploy.components.processors.base import BaseLogitsProcessor
+from hoploy.core.utils import hopwise_decode
 
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Translation cache helpers
+# ---------------------------------------------------------------------------
+
+_PLM_TYPES = (
+    PathLanguageModelingTokenType.ITEM,
+    PathLanguageModelingTokenType.ENTITY,
+    PathLanguageModelingTokenType.RELATION,
+    PathLanguageModelingTokenType.USER,
+)
+
+_TYPE_LABELS = {
+    PathLanguageModelingTokenType.ITEM.token: "item",
+    PathLanguageModelingTokenType.ENTITY.token: "entity",
+    PathLanguageModelingTokenType.RELATION.token: "relation",
+    PathLanguageModelingTokenType.USER.token: "user",
+}
+
+
+def _build_translation_cache(dataset, tokenizer):
+    """Build bidirectional ``tokenizer_id ↔ hopwise_id`` caches.
+
+    Hopwise IDs use the format ``"type:decoded_name"`` (e.g.
+    ``"entity:SensoryFeature.NOISE.2.3"``, ``"item:55"``).
+
+    :returns: ``(tok2hw, hw2tok)`` dicts.
+    :rtype: tuple[dict[int, str], dict[str, int]]
+    """
+    tok2hw: dict[int, str] = {}
+    hw2tok: dict[str, int] = {}
+    for token_str, token_id in tokenizer.get_vocab().items():
+        for plm_type in _PLM_TYPES:
+            if token_str.startswith(plm_type.token):
+                try:
+                    decoded = hopwise_decode(dataset, token_str)
+                    label = _TYPE_LABELS[plm_type.token]
+                    hw_id = f"{label}:{decoded}"
+                    tok2hw[token_id] = hw_id
+                    hw2tok[hw_id] = token_id
+                except (KeyError, IndexError):
+                    pass
+                break
+    return tok2hw, hw2tok
 
 
 @LogitsProcessor("default_logits_processor")
@@ -27,16 +73,28 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
     def __init__(self, dataset, cfg, **kwargs):
         self.dataset = dataset
         self.tokenized_ckg = dataset.get_tokenized_ckg()
-        self.tokenized_used_ids = dataset.get_tokenized_used_ids()
         self.tokenizer = dataset.tokenizer
         self.cfg = cfg
 
+        # Allow subclasses (e.g. Restricted) to override these via kwargs
+        self.tokenized_used_ids = kwargs.pop(
+            "tokenized_used_ids", dataset.get_tokenized_used_ids()
+        )
         self.remove_user_tokens_from_sequences = bool(
             getattr(self.cfg, "remove_user_tokens_from_sequences", False)
         )
-        self.max_sequence_length = int(getattr(self.cfg, "max_sequence_length", 10))
+        max_seq_len = kwargs.pop(
+            "max_sequence_length",
+            getattr(self.cfg, "max_sequence_length", 10),
+        )
+        self.max_sequence_length = int(max_seq_len) if max_seq_len is not None else None
+
+        ui_relation = getattr(self.dataset, "ui_relation", None)
+        tokenized_ui_relation_default = (
+            self.get_relation_id(ui_relation) if ui_relation is not None else None
+        )
         tokenized_ui_relation = kwargs.pop(
-            "tokenized_ui_relation", self.get_relation_id(self.dataset.ui_relation)
+            "tokenized_ui_relation", tokenized_ui_relation_default
         )
 
         mask_cache_size = int(kwargs.pop("mask_cache_size", 3 * 10**4))
@@ -48,8 +106,14 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
             for vocab in self.tokenizer.get_vocab().items()
             if vocab[0].startswith(PathLanguageModelingTokenType.USER.token)
         }
-        self.tokenized_ui_relation = {tokenized_ui_relation}
+        self.tokenized_ui_relation = (
+            {tokenized_ui_relation} if tokenized_ui_relation is not None else set()
+        )
         self.previous_recommendations = None
+
+        # Bidirectional translation cache: tokenizer_id ↔ hopwise_id
+        self._tok2hw, self._hw2tok = _build_translation_cache(self.dataset, self.tokenizer)
+
         super().__init__(
             self.tokenized_ckg,
             self.tokenized_used_ids,
@@ -87,7 +151,12 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
             self.previous_recommendations = None
             return
 
-        token_ids = set(previous_recommendations)
+        token_ids = set()
+        for tid in previous_recommendations:
+            try:
+                token_ids.add(int(tid))
+            except (TypeError, ValueError):
+                pass
         vocab_size = len(self.tokenizer)
         valid_token_ids = {tid for tid in token_ids if 0 <= tid < vocab_size}
         invalid_count = len(token_ids) - len(valid_token_ids)
@@ -101,6 +170,68 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
 
         self.previous_recommendations = valid_token_ids if valid_token_ids else None
         logger.debug("previous_recommendations: %s tokens masked", len(valid_token_ids))
+
+    # -- hook: score_adjustment ------------------------------------------------
+
+    def score_adjustment(self, hopwise_current, hopwise_candidates):
+        """Hook to apply custom score adjustments during generation.
+
+        Called for each unique beam state after graph-constraint filtering.
+        Override in subclasses to implement custom scoring logic using
+        Hopwise-level identifiers (never raw tokenizer IDs).
+
+        Identifiers use the format ``"type:value"`` where *type* is one of
+        ``item``, ``entity``, ``relation``, ``user``.  For example:
+        ``"entity:SensoryFeature.NOISE.2.3"`` or ``"item:55"``.
+
+        :param hopwise_current: Decoded Hopwise ID of the current token.
+        :type hopwise_current: str
+        :param hopwise_candidates: Decoded Hopwise IDs of the graph-valid
+            candidate tokens.
+        :type hopwise_candidates: list[str]
+        :returns: Dict of ``{hopwise_id: score_delta}``.  Use
+            ``float('-inf')`` to hard-ban a candidate, negative values to
+            penalise, positive to boost.  Candidates not present in the
+            returned dict keep their original score.
+        :rtype: dict[str, float]
+        """
+        return {}
+
+    def _apply_score_adjustments(self, unique_input_ids, input_ids_inv, full_mask, scores):
+        """Invoke :meth:`score_adjustment` for each unique input and apply deltas."""
+        # Skip entirely when the hook is not overridden (zero overhead)
+        if type(self).score_adjustment is DefaultHopwiseLogitsProcessor.score_adjustment:
+            return
+
+        for idx in range(unique_input_ids.shape[0]):
+            allowed_indices = np.where(~full_mask[idx])[0]
+            if len(allowed_indices) == 0:
+                continue
+
+            current_tok_id = unique_input_ids[idx, -1].item()
+            hw_current = self._tok2hw.get(current_tok_id)
+            if hw_current is None:
+                continue
+
+            hw_candidates = [
+                self._tok2hw[int(t)]
+                for t in allowed_indices
+                if int(t) in self._tok2hw
+            ]
+
+            adjustments = self.score_adjustment(hw_current, hw_candidates)
+            if not adjustments:
+                continue
+
+            beam_rows = np.where(input_ids_inv == idx)[0]
+            for hw_id, delta in adjustments.items():
+                tok_id = self._hw2tok.get(hw_id)
+                if tok_id is None:
+                    continue
+                if delta == float("-inf"):
+                    scores[beam_rows, tok_id] = -torch.inf
+                else:
+                    scores[beam_rows, tok_id] += delta
 
     def process_scores_rec(self, input_ids, idx):
         """Return the current key and its candidate tokens for a single input.
@@ -136,7 +267,7 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
         return set()
 
     def __call__(self, input_ids, scores):
-        """Apply graph constraints and previous-recommendation masking.
+        """Apply graph constraints, previous-recommendation masking, and score adjustments.
 
         :param input_ids: Current beam-search input IDs.
         :param scores: Raw logits to modify in-place.
@@ -193,6 +324,8 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
         else:
             scores[full_mask] = -torch.inf
 
+        self._apply_score_adjustments(unique_input_ids, input_ids_inv, full_mask, scores)
+
         return scores
 
     def handle(self, request):
@@ -204,158 +337,4 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
         :returns: ``self`` for chaining.
         """
         self.set_previous_recommendations(getattr(request, "previous_recommendations", None))
-        return self
-
-
-@LogitsProcessor("default_restricted_logits_processor")
-class DefaultRestrictedHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProcessorWordLevel):
-    """Logits processor that applies hard and soft entity / item restrictions.
-
-    :param dataset: The Hopwise dataset instance.
-    :param cfg: Processor configuration section.
-    :type cfg: ~hoploy.core.config.Config
-    """
-
-    def __init__(self, dataset, cfg, **kwargs):
-        self.dataset = dataset
-        self.tokenized_ckg = dataset.get_tokenized_ckg()
-        self.tokenizer = dataset.tokenizer
-        self.cfg = cfg
-
-        propagate_connected_entities = bool(getattr(cfg, "propagate_connected_entities", True))
-        mask_cache_size = int(kwargs.pop("mask_cache_size", 3 * 10**4))
-        pos_candidates_cache_size = int(kwargs.pop("pos_candidates_cache_size", 1 * 10**5))
-        task = kwargs.pop("task", KnowledgeEvaluationType.REC)
-
-        super().__init__(
-            self.tokenized_ckg,
-            None,
-            None,
-            self.tokenizer,
-            mask_cache_size=mask_cache_size,
-            pos_candidates_cache_size=pos_candidates_cache_size,
-            task=task,
-            **kwargs,
-        )
-        self.propagate_connected_entities = propagate_connected_entities
-        self.tokenized_entities = [
-            v for tok, v in self.tokenizer.get_vocab().items()
-            if tok.startswith(PathLanguageModelingTokenType.ENTITY.token)
-            or tok.startswith(PathLanguageModelingTokenType.ITEM.token)
-        ]
-
-        self.current_restricted_candidates = []
-        self.current_hard_restrictions = []
-        self.current_soft_restrictions = []
-
-    def set_restrictions(self, restricted_candidates=None, hard_restrictions=None, soft_restrictions=None):
-        """Set entity / item restriction lists for generation.
-
-        :param restricted_candidates: Token IDs to restrict as candidates.
-        :type restricted_candidates: list[int] | None
-        :param hard_restrictions: Token IDs to ban unconditionally.
-        :type hard_restrictions: list[int] | None
-        :param soft_restrictions: Token IDs to ban unless doing so would
-            block all tokens.
-        :type soft_restrictions: list[int] | None
-        """
-        self.current_restricted_candidates = restricted_candidates or []
-        self.current_hard_restrictions = hard_restrictions or []
-        self.current_soft_restrictions = soft_restrictions or []
-
-    def clear_restrictions(self):
-        """Remove all active restrictions."""
-        self.current_restricted_candidates = []
-        self.current_hard_restrictions = []
-        self.current_soft_restrictions = []
-
-    def _extract_connected_entities(self, token_id):
-        """Return entity token IDs reachable from *token_id* via any relation.
-
-        :param token_id: The source token ID.
-        :type token_id: int
-        :returns: Set of connected entity token IDs.
-        :rtype: set[int]
-        """
-        connected = set()
-        for entity_set in self.tokenized_ckg.get(token_id, {}).values():
-            connected.update(entity_set if isinstance(entity_set, (list, set)) else [entity_set])
-        return connected
-
-    def _gen_keepmask_restricted_candidates(self):
-        """Generate a boolean mask banning everything except shared candidates.
-
-        :returns: A NumPy boolean array of length ``vocab_size``.
-        :rtype: numpy.ndarray
-        """
-        mask = np.zeros(len(self.tokenizer), dtype=bool)
-        if not self.current_restricted_candidates:
-            return mask
-
-        mask[self.tokenized_entities] = True
-        shared = self._extract_connected_entities(self.current_restricted_candidates[0])
-        for r_candidate in self.current_restricted_candidates[1:]:
-            if r_candidate in self.tokenized_ckg:
-                shared &= self._extract_connected_entities(r_candidate)
-        mask[self.current_restricted_candidates] = False
-        mask[list(shared)] = False
-        return mask
-
-    def _gen_banmask_from_key(self, token_id):
-        """Generate a ban mask for *token_id* and optionally its neighbours.
-
-        :param token_id: The token ID to ban.
-        :type token_id: int
-        :returns: A NumPy boolean array of length ``vocab_size``.
-        :rtype: numpy.ndarray
-        """
-        mask = np.zeros(len(self.tokenizer), dtype=bool)
-        mask[token_id] = True
-        if token_id in self.tokenized_ckg and self.propagate_connected_entities:
-            mask[list(self._extract_connected_entities(token_id))] = True
-        return mask
-
-    def __call__(self, input_ids, scores):
-        """Apply restriction masks to generation scores.
-
-        :param input_ids: Current beam-search input IDs.
-        :param scores: Raw logits to modify in-place.
-        :returns: The modified scores tensor.
-        """
-        full_mask = self._gen_keepmask_restricted_candidates()
-
-        if np.all(full_mask):
-            logger.warning("Restriction mask blocks all tokens, skipping restrictions.")
-            return scores
-
-        for h_rest in self.current_hard_restrictions:
-            full_mask = np.logical_or(full_mask, self._gen_banmask_from_key(h_rest))
-
-        if np.all(full_mask):
-            logger.warning("Hard restrictions block all tokens, skipping restrictions.")
-            return scores
-
-        sorted_soft = sorted(
-            self.current_soft_restrictions,
-            key=lambda k: len(self.tokenized_ckg.get(k, [])),
-            reverse=True,
-        )
-        for s_rest in sorted_soft:
-            soft_mask = np.logical_or(full_mask, self._gen_banmask_from_key(s_rest))
-            if np.all(soft_mask):
-                break
-            full_mask = soft_mask
-
-        scores[:, full_mask] = -np.inf
-        return scores
-
-    def handle(self, request):
-        """Clear restrictions (override in plugins for custom logic).
-
-        :param request: A :class:`~hoploy.core.config.Config` wrapping the
-            API payload.
-        :type request: Config
-        :returns: ``self`` for chaining.
-        """
-        self.clear_restrictions()
         return self

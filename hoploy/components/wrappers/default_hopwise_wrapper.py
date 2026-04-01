@@ -1,5 +1,6 @@
 import torch
 import pathlib
+from typing import Any, final
 
 from hopwise.data import Interaction
 from hopwise.utils import PathLanguageModelingTokenType
@@ -171,12 +172,15 @@ class DefaultHopwiseWrapper(BaseWrapper):
             model.sequence_postprocessor = sequence_processor
         return self
 
-    def recommend(self, inputs):
+    @final
+    def recommend(self, inputs: list[str]) -> tuple | None:
         """Run beam-search generation and return top recommendations.
+
+        .. warning::
+            This method is **sealed** — subclasses must not override it.
 
         :param inputs: Hopwise-tokenized input strings,
             e.g. ``["<s> I23", ...]``.
-        :type inputs: list[str]
         :returns: A ``(scores, item_ids, explanations)`` tuple, or
             ``None`` when no valid sequences are produced.
         :rtype: tuple | None
@@ -237,22 +241,28 @@ class DefaultHopwiseWrapper(BaseWrapper):
 
     # -- encoding helpers ------------------------------------------------------
 
-    def encode(self, value, token_type):
+    @final
+    def encode(self, value: Any, token_type: str) -> str:
         """Encode a dataset value to a Hopwise token string.
+
+        .. warning::
+            This method is **sealed** — subclasses must not override it.
 
         :param value: The raw dataset value.
         :param token_type: Token prefix string.
-        :type token_type: str
         :returns: The encoded token.
         :rtype: str
         """
         return hopwise_encode(self.dataset, value, token_type)
 
-    def decode(self, token, **kwargs):
+    @final
+    def decode(self, token: str, **kwargs: Any) -> str:
         """Decode a Hopwise token string back to a dataset value.
 
+        .. warning::
+            This method is **sealed** — subclasses must not override it.
+
         :param token: The encoded token string.
-        :type token: str
         :param kwargs: Pass ``real_token=True`` to resolve item tokens
             to their human-readable name.
         :returns: The decoded dataset value.
