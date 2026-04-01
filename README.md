@@ -27,19 +27,6 @@ No framework internals need to be modified. Everything domain-specific lives ent
 
 ## Architecture overview
 
-```
-API request
-    │
-    ▼
-┌──────────┐   distill()    ┌───────────┐   recommend()   ┌───────────────┐
-│  Routes   │ ─────────────► │  Wrapper  │ ───────────────► │ Beam search   │
-│ /recommend│                │           │                  │ + processors  │
-│ /info     │ ◄───────────── │           │ ◄─────────────── │               │
-│ /search   │   expand()     └───────────┘   raw output     └───────────────┘
-└──────────┘                      │
-                             handle()  ──► logits / sequence processors
-```
-
 The pipeline executes the following steps on each request:
 
 1. `wrapper.distill(request)` — translate the API payload to Hopwise input token sequences.
