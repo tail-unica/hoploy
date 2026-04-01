@@ -41,7 +41,7 @@ The pipeline executes the following steps on each request:
 
 A plugin is a self-contained directory that is passed to `Config`:
 
-```
+```bash
 plugins/my_domain/
     __init__.py           # entry point; imports trigger component registration
     model.py              # wrapper subclass: distill / handle / expand
