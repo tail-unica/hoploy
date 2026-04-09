@@ -101,37 +101,39 @@ class MyWrapper(DefaultHopwiseWrapper):
 
 The logits processor controls which tokens are allowed or scored at each generation step. `handle()` sets up restrictions from the request before generation begins. A second optional hook, `score_adjustment()`, can apply fine-grained score deltas at generation time.
 
+All processor methods accept Hopwise IDs — typed token strings such as `"I7"`, `"E17"`, `"R3"`. The plugin author is responsible for calling `hopwise_encode()` in `handle()` to produce these tokens from domain identifiers. The framework translates Hopwise IDs to internal tokenizer IDs transparently; plugin authors never interact with the tokenizer.
+
 ```python
 from hoploy.components import DefaultHopwiseLogitsProcessor
 from hoploy.registry import LogitsProcessor
-from hoploy.core.utils import id2tokenizer_token
+from hoploy.core.utils import hopwise_encode
 
 @LogitsProcessor
 class MyLogitsProcessor(DefaultHopwiseLogitsProcessor):
 
     def handle(self, request):
         if request.previous_recommendations:
-            token_ids = id2tokenizer_token(
-                self.dataset, request.previous_recommendations, "item"
-            )
-            self.set_previous_recommendations(token_ids)
+            hopwise_ids = [
+                hopwise_encode(self.dataset, item_id, "I")
+                for item_id in request.previous_recommendations
+            ]
+            self.set_previous_recommendations(hopwise_ids)
         return self
 ```
 
 Available methods callable from `handle()`:
 
-| Method | Effect |
-|---|---|
-| `set_previous_recommendations(token_ids)` | Mask items the user has already seen. |
-| `set_restrictions(hard_restrictions, soft_restrictions)` | Ban or penalise specific entities or items. |
-| `clear_restrictions()` | Reset all restrictions. |
+| Method | Accepts | Effect |
+|---|---|---|
+| `set_previous_recommendations(hopwise_ids)` | Hopwise item tokens (e.g. `["I7", "I42"]`) | Mask items the user has already seen. |
+| `set_restrictions(hard_restrictions, soft_restrictions)` | Hopwise tokens (e.g. `["E17", "E23"]`) | Ban or penalise specific entities or items. |
+| `clear_restrictions()` | — | Reset all restrictions. |
 
-The optional `score_adjustment()` hook receives Hopwise IDs rather than tokenizer internals and returns score deltas:
+The optional `score_adjustment()` hook receives Hopwise IDs in `"type:value"` format and returns score deltas:
 
 ```python
 def score_adjustment(self, hopwise_current, hopwise_candidates):
-    # hopwise_current and hopwise_candidates use "type:value" format,
-    # e.g. "entity:SensoryFeature.NOISE.2.3" or "item:55"
+    # "type:value" format, e.g. "entity:SensoryFeature.NOISE.2.3" or "item:55"
     return {"item:55": float("-inf")}  # hard-ban item 55
 ```
 

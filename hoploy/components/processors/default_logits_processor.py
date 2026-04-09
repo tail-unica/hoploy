@@ -1,16 +1,12 @@
-import logging
-
 import numpy as np
 import torch
 from hopwise.model.logits_processor import ConstrainedLogitsProcessorWordLevel
 from hopwise.utils import KnowledgeEvaluationType, PathLanguageModelingTokenType
 
+from hoploy import logger
 from hoploy.core.registry import LogitsProcessor
 from hoploy.components.processors.base import BaseLogitsProcessor
-from hoploy.core.utils import hopwise_decode
-
-
-logger = logging.getLogger(__name__)
+from hoploy.core.utils import hopwise_encode, hopwise_decode
 
 
 # ---------------------------------------------------------------------------
@@ -24,19 +20,12 @@ _PLM_TYPES = (
     PathLanguageModelingTokenType.USER,
 )
 
-_TYPE_LABELS = {
-    PathLanguageModelingTokenType.ITEM.token: "item",
-    PathLanguageModelingTokenType.ENTITY.token: "entity",
-    PathLanguageModelingTokenType.RELATION.token: "relation",
-    PathLanguageModelingTokenType.USER.token: "user",
-}
 
+def _build_translation_cache(tokenizer):
+    """Build bidirectional ``tokenizer_id ↔ hopwise_token`` caches.
 
-def _build_translation_cache(dataset, tokenizer):
-    """Build bidirectional ``tokenizer_id ↔ hopwise_id`` caches.
-
-    Hopwise IDs use the format ``"type:decoded_name"`` (e.g.
-    ``"entity:SensoryFeature.NOISE.2.3"``, ``"item:55"``).
+    Hopwise tokens use the short format (e.g. ``"I7"``, ``"E17"``,
+    ``"R3"``, ``"U8"``).
 
     :returns: ``(tok2hw, hw2tok)`` dicts.
     :rtype: tuple[dict[int, str], dict[str, int]]
@@ -46,14 +35,8 @@ def _build_translation_cache(dataset, tokenizer):
     for token_str, token_id in tokenizer.get_vocab().items():
         for plm_type in _PLM_TYPES:
             if token_str.startswith(plm_type.token):
-                try:
-                    decoded = hopwise_decode(dataset, token_str)
-                    label = _TYPE_LABELS[plm_type.token]
-                    hw_id = f"{label}:{decoded}"
-                    tok2hw[token_id] = hw_id
-                    hw2tok[hw_id] = token_id
-                except (KeyError, IndexError):
-                    pass
+                tok2hw[token_id] = token_str
+                hw2tok[token_str] = token_id
                 break
     return tok2hw, hw2tok
 
@@ -111,8 +94,8 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
         )
         self.previous_recommendations = None
 
-        # Bidirectional translation cache: tokenizer_id ↔ hopwise_id
-        self._tok2hw, self._hw2tok = _build_translation_cache(self.dataset, self.tokenizer)
+        # Bidirectional translation cache: tokenizer_id ↔ hopwise_token
+        self._tok2hw, self._hw2tok = _build_translation_cache(self.tokenizer)
 
         super().__init__(
             self.tokenized_ckg,
@@ -140,36 +123,41 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
         relation_token = PathLanguageModelingTokenType.RELATION.token + str(token_id)
         return self.dataset.tokenizer.convert_tokens_to_ids(relation_token)
 
-    def set_previous_recommendations(self, previous_recommendations):
-        """Set token IDs that should be masked during generation.
+    def _hopwise_ids_to_token_ids(self, hopwise_ids):
+        """Convert a list of Hopwise token strings to tokenizer IDs.
 
-        :param previous_recommendations: Iterable of token IDs, or
-            ``None`` to clear.
-        :type previous_recommendations: set[int] | list[int] | None
+        Tokens that resolve to the unknown-token ID are silently skipped.
+
+        :param hopwise_ids: Hopwise tokens (e.g. ``"E17"``, ``"I42"``).
+        :type hopwise_ids: list[str]
+        :returns: List of valid tokenizer integer IDs.
+        :rtype: list[int]
         """
-        if previous_recommendations is None:
+        result = []
+        for hw_id in hopwise_ids:
+            tid = self.tokenizer.convert_tokens_to_ids(hw_id)
+            if tid != self.tokenizer.unk_token_id:
+                result.append(tid)
+        return result
+
+    def set_previous_recommendations(self, hopwise_ids):
+        """Set items that should be masked during generation.
+
+        Accepts Hopwise token strings (e.g. ``"I7"``, ``"I42"``).
+        The framework translates them to internal tokenizer IDs
+        transparently.
+
+        :param hopwise_ids: Hopwise item token strings, or ``None``
+            to clear.
+        :type hopwise_ids: list[str] | None
+        """
+        if not hopwise_ids:
             self.previous_recommendations = None
             return
 
-        token_ids = set()
-        for tid in previous_recommendations:
-            try:
-                token_ids.add(int(tid))
-            except (TypeError, ValueError):
-                pass
-        vocab_size = len(self.tokenizer)
-        valid_token_ids = {tid for tid in token_ids if 0 <= tid < vocab_size}
-        invalid_count = len(token_ids) - len(valid_token_ids)
-
-        if invalid_count:
-            logger.warning(
-                "set_previous_recommendations: %s invalid token IDs skipped (vocab_size=%s)",
-                invalid_count,
-                vocab_size,
-            )
-
-        self.previous_recommendations = valid_token_ids if valid_token_ids else None
-        logger.debug("previous_recommendations: %s tokens masked", len(valid_token_ids))
+        valid = set(self._hopwise_ids_to_token_ids(hopwise_ids))
+        self.previous_recommendations = valid if valid else None
+        logger.debug("previous_recommendations: %s tokens masked", len(valid))
 
     # -- hook: score_adjustment ------------------------------------------------
 
@@ -180,16 +168,15 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
         Override in subclasses to implement custom scoring logic using
         Hopwise-level identifiers (never raw tokenizer IDs).
 
-        Identifiers use the format ``"type:value"`` where *type* is one of
-        ``item``, ``entity``, ``relation``, ``user``.  For example:
-        ``"entity:SensoryFeature.NOISE.2.3"`` or ``"item:55"``.
+        Identifiers use the short Hopwise token format: ``"I7"``,
+        ``"E17"``, ``"R3"``, ``"U8"``.
 
-        :param hopwise_current: Decoded Hopwise ID of the current token.
+        :param hopwise_current: Hopwise token of the current graph node.
         :type hopwise_current: str
-        :param hopwise_candidates: Decoded Hopwise IDs of the graph-valid
-            candidate tokens.
+        :param hopwise_candidates: Hopwise tokens of the graph-valid
+            candidate nodes.
         :type hopwise_candidates: list[str]
-        :returns: Dict of ``{hopwise_id: score_delta}``.  Use
+        :returns: Dict of ``{hopwise_token: score_delta}``.  Use
             ``float('-inf')`` to hard-ban a candidate, negative values to
             penalise, positive to boost.  Candidates not present in the
             returned dict keep their original score.
@@ -338,3 +325,24 @@ class DefaultHopwiseLogitsProcessor(BaseLogitsProcessor, ConstrainedLogitsProces
         """
         self.set_previous_recommendations(getattr(request, "previous_recommendations", None))
         return self
+
+    def encode(self, value, token_type):
+        """Encode a dataset value to a Hopwise token string.
+
+        :param value: The raw dataset value.
+        :param token_type: Token prefix string.
+        :returns: The encoded token.
+        :rtype: str
+        """
+        return hopwise_encode(self.dataset, value, token_type)
+
+    def decode(self, token, **kwargs):
+        """Decode a Hopwise token string back to a dataset value.
+
+        :param token: The encoded token string.
+        :param kwargs: Pass ``real_token=True`` to resolve item tokens
+            to their human-readable name.
+        :returns: The decoded dataset value.
+        :rtype: str
+        """
+        return hopwise_decode(self.dataset, token, real_token=kwargs.get("real_token"))

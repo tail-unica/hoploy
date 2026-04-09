@@ -1,0 +1,36 @@
+plugin:
+  name: hummus
+  wrapper: [hummus_model]
+  logits_processors: [hummus_logits_processor, hummus_restricted_logits_processor]
+  sequence_processor: [hummus_sequence_processor]
+  schema:
+    module: hummus_schema
+    get:
+      info: hummus_model.info
+    post:
+      recommend: run
+
+wrapper:
+  pearlm:
+    name: hummus_model
+    device: "cuda"
+    hopwise_checkpoint_file: "checkpoints/hummus/hopwise-distilgpt2-PEARLM-Jul-31-2025_19-44-04.pth"
+    dataset: "datasets/hummus"
+    compile_mode: "default"
+    recommendation_count: 5
+    diversity_factor: 0.5
+    load_col_item: ["recipe_id", "name", "description"]
+
+logits_processors:
+  hummus_logits_processor:
+    dataset: "datasets/hummus"
+    name: hummus_logits_processor
+  hummus_restricted_logits_processor:
+    dataset: "datasets/hummus"
+    name: hummus_restricted_logits_processor
+    propagate_connected_entities: false
+
+sequence_processor:
+  hummus_sequence_processor:
+    dataset: "datasets/hummus"
+    name: hummus_sequence_processor

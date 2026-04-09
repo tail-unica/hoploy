@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.py[cod]
+*.pyo
+.venv
+.uv
+
+# Dati pesanti (montati come volumi)
+datasets/
+checkpoints/
+
+# Dev & test
+tests/
+.pytest_cache
+*.ipynb
+.ipynb_checkpoints
+
+# Editor / OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Build artifacts
+dist/
+*.egg-info/
+build/

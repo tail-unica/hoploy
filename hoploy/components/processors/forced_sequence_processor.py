@@ -1,16 +1,13 @@
 """Forced-path sequence post-processor for Hopwise generation pipelines."""
 
-import logging
-
 import torch
 from hopwise.utils import PathLanguageModelingTokenType
 
+from hoploy import logger
 from hoploy.components.processors.default_sequence_processor import (
     DefaultHopwiseSequenceScorePostProcessor,
 )
 from hoploy.core.registry import SequenceProcessor
-
-logger = logging.getLogger(__name__)
 
 
 @SequenceProcessor("forced_sequence_processor")

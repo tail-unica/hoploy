@@ -1,13 +1,10 @@
 """Forced-path logits processor for Hopwise generation pipelines."""
 
-import logging
-
 from hopwise.utils import PathLanguageModelingTokenType
 
+from hoploy import logger
 from hoploy.components.processors.default_logits_processor import DefaultHopwiseLogitsProcessor
 from hoploy.core.registry import LogitsProcessor
-
-logger = logging.getLogger(__name__)
 
 
 @LogitsProcessor("forced_logits_processor")

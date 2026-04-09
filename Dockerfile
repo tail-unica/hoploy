@@ -5,18 +5,20 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv from Astral's UV image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Install uv (pinned version for reproducibility)
+COPY --from=ghcr.io/astral-sh/uv:0.11.3 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock* ./
+COPY pyproject.toml uv.lock ./
 
-RUN uv sync --no-install-project
+RUN uv sync --frozen --no-install-project
 
 COPY . .
 
-RUN uv sync
+RUN uv sync --frozen
 
-# Run through the project CLI entrypoint
-CMD ["uv", "run", "python", "-O", "-m", "uvicorn", "hoploy.main:app", "--log-level", "debug", "--host", "0.0.0.0", "--port", "8100"]
+EXPOSE 8100
+
+# Log level configurable via LOG_LEVEL env var (default: info)
+CMD ["uv", "run", "python", "-O", "-m", "uvicorn", "hoploy.main:app", "--log-level", "info", "--host", "0.0.0.0", "--port", "8100"]

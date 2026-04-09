@@ -1,16 +1,31 @@
-import csv
 import math
-import pathlib
 
 from hopwise.utils import PathLanguageModelingTokenType
 
 from hoploy.components import DefaultHopwiseWrapper
 from hoploy.registry import Wrapper
-from hoploy.core.utils import hopwise_encode, hopwise_decode, id2tokenizer_token
 
 from hoploy import logger
+from hoploy.core.catalog import get_catalog
 
 from .processors import user_sample_compatible_features
+
+
+def _sensory_features_for(catalog, poi_id: str) -> list[dict]:
+    """Extract sensory features for *poi_id* from catalog neighbors.
+
+    Parses ``SensoryFeature.NOISE.2.3`` tail IDs stored in
+    ``catalog.neighbors[poi_id]["HAS_SENSORY_FEATURE"]``.
+    """
+    tails = catalog.neighbors.get(poi_id, {}).get("HAS_SENSORY_FEATURE", [])
+    result = []
+    for tail_id in tails:
+        parts = tail_id.split(".")
+        if len(parts) >= 4:
+            feature_name = parts[1].lower()
+            rating = float(f"{parts[2]}.{parts[3]}")
+            result.append({"feature_name": feature_name, "rating": rating})
+    return result
 
 
 # ---- Explanation helpers ----
@@ -130,61 +145,6 @@ def _format_explanation(template_config, raw_tokens, real_tokens, better_readabi
     return result
 
 
-# ---- Item catalog ----
-
-def _load_item_catalog(dataset_path: str):
-    """Load items from the ``.item`` file and sensory features from ``.kg``.
-
-    :param dataset_path: Path to the dataset directory.
-    :type dataset_path: str
-    :returns: A ``(items, name_index, sensory)`` tuple.
-    :rtype: tuple[dict, dict, dict]
-    """
-    ds_dir = pathlib.Path(dataset_path)
-    ds_name = ds_dir.name
-
-    # Load .item file (tab-separated)
-    item_file = ds_dir / f"{ds_name}.item"
-    items = {}  # poi_id -> dict
-    name_index = {}  # lowercase name -> poi_id
-
-    with open(item_file, "r", encoding="utf-8") as f:
-        reader = csv.reader(f, delimiter="\t")
-        header = next(reader)
-        col_names = [h.split(":")[0] for h in header]
-        for row in reader:
-            record = dict(zip(col_names, row))
-            poi_id = record["poi_id"]
-            items[poi_id] = record
-            name = record.get("name", "").strip()
-            if name:
-                name_index[name.lower()] = poi_id
-
-    # Load sensory features from .kg file
-    kg_file = ds_dir / f"{ds_name}.kg"
-    sensory = {}  # poi_id -> list of {feature_name, rating}
-
-    with open(kg_file, "r", encoding="utf-8") as f:
-        reader = csv.reader(f, delimiter="\t")
-        next(reader)  # skip header
-        for row in reader:
-            head_id, relation, tail_id = row[0], row[1], row[2]
-            if relation != "HAS_SENSORY_FEATURE":
-                continue
-            # head_id: "Place.17", tail_id: "SensoryFeature.NOISE.2.3"
-            poi_id = head_id.split(".", 1)[1]
-            parts = tail_id.split(".")
-            # parts: ["SensoryFeature", "NOISE", "2", "3"] -> rating = "2.3"
-            feature_name = parts[1].lower()
-            rating = float(f"{parts[2]}.{parts[3]}")
-            sensory.setdefault(poi_id, []).append({
-                "feature_name": feature_name,
-                "rating": rating,
-            })
-
-    return items, name_index, sensory
-
-
 def _parse_coordinates(coord_str: str):
     """Parse a ``'lon, lat'`` string into a GeoJSON Feature dict.
 
@@ -270,8 +230,8 @@ class AutismWrapper(DefaultHopwiseWrapper):
 
     def __init__(self, cfg):
         super().__init__(cfg)
-        self._items, self._name_index, self._sensory = _load_item_catalog(cfg.dataset)
-        logger.info(f"Loaded item catalog: {len(self._items)} items")
+        self._catalog = get_catalog(cfg.dataset)
+        logger.info(f"Loaded item catalog: {len(self._catalog.items)} items")
 
     def _names_to_poi_ids(self, names: list) -> list:
         """Convert place names to dataset POI ids.
@@ -285,7 +245,7 @@ class AutismWrapper(DefaultHopwiseWrapper):
         """
         result = []
         for name in names:
-            poi_id = self._name_index.get(name.lower())
+            poi_id = self._catalog.name_index.get(name.lower())
             if poi_id is None:
                 logger.warning(f"Place name '{name}' not found in catalog, skipping.")
             else:
@@ -316,7 +276,7 @@ class AutismWrapper(DefaultHopwiseWrapper):
         raw_inputs = []
         for poi_id in self._names_to_poi_ids(preferences):
             try:
-                token = hopwise_encode(self.dataset, poi_id, PathLanguageModelingTokenType.ITEM.token)
+                token = self.encode(poi_id, PathLanguageModelingTokenType.ITEM.token)
                 raw_inputs.append(separator.join([bos, token]))
             except KeyError:
                 logger.warning(f"poi_id '{poi_id}' not found in hopwise dataset, skipping.")
@@ -327,7 +287,7 @@ class AutismWrapper(DefaultHopwiseWrapper):
                 aversions = {a["feature_name"]: a["rating"] for a in aversions}
             for feature in user_sample_compatible_features(aversions):
                 try:
-                    token = hopwise_encode(self.dataset, feature, PathLanguageModelingTokenType.ENTITY.token)
+                    token = self.encode(feature, PathLanguageModelingTokenType.ENTITY.token)
                     raw_inputs.append(separator.join([bos, token]))
                 except KeyError:
                     pass
@@ -426,13 +386,13 @@ class AutismWrapper(DefaultHopwiseWrapper):
             item = request.item
         if not item:
             return None
-        poi_id = self._name_index.get(item.lower())
+        poi_id = self._catalog.name_index.get(item.lower())
         if poi_id is None:
             return None
-        record = self._items.get(poi_id)
+        record = self._catalog.items.get(poi_id)
         if record is None:
             return None
-        return _item_to_info(record, self._sensory.get(poi_id, []))
+        return _item_to_info(record, _sensory_features_for(self._catalog, poi_id))
 
     def search(self, request):
         """Search the item catalog by name, tags, position, and categories.
@@ -462,7 +422,7 @@ class AutismWrapper(DefaultHopwiseWrapper):
                 pass
 
         results = []
-        for poi_id, record in self._items.items():
+        for poi_id, record in self._catalog.items.items():
             name = record.get("name", "").strip()
             tags = record.get("tags", "").strip()
 
@@ -486,7 +446,7 @@ class AutismWrapper(DefaultHopwiseWrapper):
                 if dist > distance:
                     continue
 
-            results.append(_item_to_info(record, self._sensory.get(poi_id, [])))
+            results.append(_item_to_info(record, _sensory_features_for(self._catalog, poi_id)))
 
             if len(results) >= limit:
                 break

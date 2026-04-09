@@ -17,6 +17,7 @@ class Pipe:
     def __init__(self, cfg):
         self.cfg = cfg
         self._ready = False
+        self._components: dict[str, object] = {}
 
         for plugin_cfg in self.cfg.plugin.raw.values():
             load_plugin(plugin_cfg)
@@ -25,6 +26,7 @@ class Pipe:
         logger.info("Initializing wrapper")
         wrapper_cfg = next(iter(self.cfg.wrapper))
         self.wrapper = PluginRegistry.get(wrapper_cfg.name)(wrapper_cfg)
+        self._components[wrapper_cfg.name] = self.wrapper
 
         # Logits processor initialization
         logger.info("Initializing logits processors")
@@ -35,6 +37,7 @@ class Pipe:
                 cfg=processor_cfg,
             )
             self.logits_processors.append(processor)
+            self._components[processor_cfg.name] = processor
 
         # Sequence processor initialization
         logger.info("Initializing sequence processor")
@@ -45,12 +48,26 @@ class Pipe:
                 dataset=self.wrapper.dataset,
                 cfg=sequence_cfg,
             )
+            self._components[sequence_cfg.name] = self.sequence_processor
 
         self._ready = True
 
     def is_ready(self) -> bool:
         """Return ``True`` when the pipeline is fully initialised."""
         return self._ready
+
+    def get_component(self, name: str):
+        """Return a live component instance by its registration name.
+
+        :param name: The registration name of the component.
+        :type name: str
+        :returns: The component instance.
+        :raises ValueError: If *name* is not found.
+        """
+        instance = self._components.get(name)
+        if instance is None:
+            raise ValueError(f"Component '{name}' not found in pipeline")
+        return instance
 
     async def shutdown(self):
         """Mark the pipeline as unavailable."""

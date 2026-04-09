@@ -1,11 +1,9 @@
 import torch
 
-import logging
-
+from hoploy import logger
 from hoploy.core.registry import SequenceProcessor
 from hoploy.components.processors.base import BaseSequenceProcessor
-
-logger = logging.getLogger(__name__)
+from hoploy.core.utils import hopwise_encode, hopwise_decode
 
 from hopwise.model.sequence_postprocessor import CumulativeSequenceScorePostProcessor
 from hopwise.utils import PathLanguageModelingTokenType
@@ -24,6 +22,7 @@ class DefaultHopwiseSequenceScorePostProcessor(BaseSequenceProcessor, Cumulative
     """
 
     def __init__(self, dataset, cfg, **kwargs):
+        self.dataset = dataset
         self.tokenizer = dataset.tokenizer
         self.item_num = dataset.item_num
         self.topk = int(getattr(cfg, "topk", 10))
@@ -139,3 +138,24 @@ class DefaultHopwiseSequenceScorePostProcessor(BaseSequenceProcessor, Cumulative
             return None
 
         return recommended_item, seq
+
+    def encode(self, value, token_type):
+        """Encode a dataset value to a Hopwise token string.
+
+        :param value: The raw dataset value.
+        :param token_type: Token prefix string.
+        :returns: The encoded token.
+        :rtype: str
+        """
+        return hopwise_encode(self.dataset, value, token_type)
+
+    def decode(self, token, **kwargs):
+        """Decode a Hopwise token string back to a dataset value.
+
+        :param token: The encoded token string.
+        :param kwargs: Pass ``real_token=True`` to resolve item tokens
+            to their human-readable name.
+        :returns: The decoded dataset value.
+        :rtype: str
+        """
+        return hopwise_decode(self.dataset, token, real_token=kwargs.get("real_token"))

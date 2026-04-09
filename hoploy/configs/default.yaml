@@ -13,6 +13,7 @@ wrapper:
     propagate_connected_entities: false 
     compile_mode: "default"
     recommendation_count: 5
+    train_stage: "pretrain"
 
 logits_processors:
   default:
@@ -23,9 +24,6 @@ logits_processors:
 sequence_processor:
   default:
     name: default_cumulative_sequence_processor
-
-plugin:
-  - "plugins/autism"
 
 logging:
   level: "DEBUG"

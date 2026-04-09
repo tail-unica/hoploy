@@ -12,16 +12,20 @@ _encode_lookup_cache: dict[int, dict[str, dict[str, int]]] = {}
 def _get_encode_lookup(dataset, token_type):
     """Return a cached ``{value: index}`` dict for the given token type.
 
+    The cache is stored directly on the dataset object so it lives and
+    dies with the dataset instance — no risk of stale references via
+    ``id()`` reuse after garbage collection.
+
     :param dataset: The Hopwise dataset instance.
     :param token_type: One of the ``PathLanguageModelingTokenType`` token prefixes.
     :type token_type: str
     :returns: Mapping from dataset value to internal index.
     :rtype: dict[str, int]
     """
-    ds_id = id(dataset)
-    if ds_id not in _encode_lookup_cache:
-        _encode_lookup_cache[ds_id] = {}
-    cache = _encode_lookup_cache[ds_id]
+    cache = getattr(dataset, '_hoploy_encode_cache', None)
+    if cache is None:
+        cache = {}
+        dataset._hoploy_encode_cache = cache
     if token_type not in cache:
         field_map = {
             PathLanguageModelingTokenType.ITEM.token: dataset.iid_field,

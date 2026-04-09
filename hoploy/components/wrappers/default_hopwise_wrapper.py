@@ -1,17 +1,14 @@
-import torch
 import pathlib
 from typing import Any, final
 
+import torch
 from hopwise.data import Interaction
 from hopwise.utils import PathLanguageModelingTokenType
 
-import logging
-
+from hoploy import logger
 from hoploy.components.wrappers.base import BaseWrapper
 from hoploy.core.registry import Wrapper
 from hoploy.core.utils import hopwise_encode, hopwise_decode
-
-logger = logging.getLogger(__name__)
 
 
 @Wrapper("default_model")
@@ -30,18 +27,22 @@ class DefaultHopwiseWrapper(BaseWrapper):
         self.cfg = cfg
         self._runtime_cfg = cfg
 
-        checkpoint_file = pathlib.Path("checkpoint") / self.cfg.hopwise_checkpoint_file
-        logger.info(f"Loading checkpoint from {checkpoint_file}")
+        logger.info(f"Loading checkpoint from {self.cfg.hopwise_checkpoint_file}")
         checkpoint = torch.load(
             self.cfg.hopwise_checkpoint_file,
             map_location=self.cfg.device,
             weights_only=False,
         )
+
         config = checkpoint["config"]
-        config["checkpoint_dir"] = pathlib.Path(self.cfg.hopwise_checkpoint_file).parent
-        config["data_path"] = pathlib.Path(self.cfg.dataset)
-        config["load_col"]["item"] = ["poi_id", "name"]
-        config["train_stage"] = "pretrain"
+        
+        config["checkpoint_dir"] = str(pathlib.Path(self.cfg.hopwise_checkpoint_file).parent)
+        config["load_col"]["item"] = list(getattr(self.cfg, "load_col_item", config["load_col"]["item"]))
+        config["data_path"] = self.cfg.dataset
+
+        if train_stage := getattr(self.cfg, "train_stage", None):
+            config["train_stage"] = train_stage
+        
         config._set_env_behavior()
 
         from hopwise.data.utils import data_preparation

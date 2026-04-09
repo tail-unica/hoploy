@@ -6,9 +6,10 @@ import sys
 class _InternalRegistry:
     """Central store for all registered components."""
 
-    wrappers: dict[str, type] = {}
-    logits_processors: dict[str, type] = {}
-    sequence_processors: dict[str, type] = {}
+    def __init__(self):
+        self.wrappers: dict[str, type] = {}
+        self.logits_processors: dict[str, type] = {}
+        self.sequence_processors: dict[str, type] = {}
 
     def __repr__(self):
         return (

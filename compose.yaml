@@ -9,6 +9,9 @@ services:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all
     restart: unless-stopped
+    volumes:
+      - dataset-data:/app/datasets
+      - checkpoint-data:/app/checkpoints
     deploy:
       resources:
         reservations:
@@ -16,3 +19,7 @@ services:
             - driver: nvidia
               count: 2
               capabilities: [gpu]
+
+volumes:
+  dataset-data:
+  checkpoint-data:

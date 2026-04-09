@@ -1,14 +1,11 @@
 """Restriction-based logits processor for Hopwise generation pipelines."""
 
-import logging
-
 import numpy as np
 from hopwise.utils import PathLanguageModelingTokenType
 
+from hoploy import logger
 from hoploy.core.registry import LogitsProcessor
 from hoploy.components.processors.default_logits_processor import DefaultHopwiseLogitsProcessor
-
-logger = logging.getLogger(__name__)
 
 
 @LogitsProcessor("restricted_logits_processor")
@@ -49,17 +46,31 @@ class RestrictedHopwiseLogitsProcessor(DefaultHopwiseLogitsProcessor):
     def set_restrictions(self, restricted_candidates=None, hard_restrictions=None, soft_restrictions=None):
         """Set entity / item restriction lists for generation.
 
-        :param restricted_candidates: Token IDs to restrict as candidates.
-        :type restricted_candidates: list[int] | None
-        :param hard_restrictions: Token IDs to ban unconditionally.
-        :type hard_restrictions: list[int] | None
-        :param soft_restrictions: Token IDs to ban unless doing so would
-            block all tokens.
-        :type soft_restrictions: list[int] | None
+        Accepts Hopwise token strings (e.g. ``"E17"``, ``"I42"``).
+        The framework translates them to internal tokenizer IDs
+        transparently.
+
+        :param restricted_candidates: Hopwise tokens to restrict as
+            candidates.
+        :type restricted_candidates: list[str] | None
+        :param hard_restrictions: Hopwise tokens to ban unconditionally.
+        :type hard_restrictions: list[str] | None
+        :param soft_restrictions: Hopwise tokens to ban unless doing so
+            would block all tokens.
+        :type soft_restrictions: list[str] | None
         """
-        self.current_restricted_candidates = restricted_candidates or []
-        self.current_hard_restrictions = hard_restrictions or []
-        self.current_soft_restrictions = soft_restrictions or []
+        self.current_restricted_candidates = (
+            self._hopwise_ids_to_token_ids(restricted_candidates)
+            if restricted_candidates else []
+        )
+        self.current_hard_restrictions = (
+            self._hopwise_ids_to_token_ids(hard_restrictions)
+            if hard_restrictions else []
+        )
+        self.current_soft_restrictions = (
+            self._hopwise_ids_to_token_ids(soft_restrictions)
+            if soft_restrictions else []
+        )
 
     def clear_restrictions(self):
         """Remove all active restrictions."""

@@ -11,7 +11,6 @@ from fastapi.responses import RedirectResponse
 from omegaconf import OmegaConf
 
 from hoploy.core.config import Config
-from hoploy.core.registry import PluginRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +72,8 @@ def _resolve_handler(handler_spec, service):
 
     * ``"run"`` resolves to ``service.run`` (pipeline method).
     * ``"component_name.method"`` resolves via
-      :meth:`PluginRegistry.get`.
+      :meth:`~hoploy.core.pipeline.Pipe.get_component` so that the
+      method is bound to the live instance, not the class.
 
     :param handler_spec: Dotted or plain handler name.
     :type handler_spec: str
@@ -83,8 +83,8 @@ def _resolve_handler(handler_spec, service):
     """
     if "." in handler_spec:
         component_name, method_name = handler_spec.rsplit(".", 1)
-        component = PluginRegistry.get(component_name)
-        method = getattr(component, method_name, None)
+        instance = service.get_component(component_name)
+        method = getattr(instance, method_name, None)
         if method is None:
             raise ValueError(
                 f"Component '{component_name}' has no method '{method_name}'"
