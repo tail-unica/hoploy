@@ -8,6 +8,12 @@ RUN apt-get update \
 # Install uv (pinned version for reproducibility)
 COPY --from=ghcr.io/astral-sh/uv:0.11.3 /uv /usr/local/bin/uv
 
+# Create non-root user matching the host UID/GID (passed as build args)
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g "${GID}" app \
+    && useradd -u "${UID}" -g "${GID}" -m -d /home/app app
+
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
@@ -16,7 +22,13 @@ RUN uv sync --frozen --no-install-project
 
 COPY . .
 
-RUN uv sync --frozen
+# Sync, pre-create writable directories, then hand ownership only to what's needed at runtime
+RUN uv sync --frozen \
+    && mkdir -p /app/log \
+    && chown -R app:app /app/log \
+    && chown app:app /app
+
+USER app
 
 EXPOSE 8100
 

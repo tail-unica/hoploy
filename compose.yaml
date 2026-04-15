@@ -2,6 +2,9 @@ services:
   hoploy:
     build:
       context: .
+      args:
+        UID: "${HOST_UID:-1000}"
+        GID: "${HOST_GID:-1000}"
     image: hoploy:latest
     ports:
       - "8102:8100"
@@ -10,8 +13,8 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
     restart: unless-stopped
     volumes:
-      - dataset-data:/app/datasets
-      - checkpoint-data:/app/checkpoints
+      - ./datasets:/app/datasets
+      - ./checkpoints:/app/checkpoints
     deploy:
       resources:
         reservations:
@@ -20,6 +23,37 @@ services:
               count: 2
               capabilities: [gpu]
 
-volumes:
-  dataset-data:
-  checkpoint-data:
+  # Servizio di training hopwise.
+  #
+  # Uso con argomenti espliciti (sovrascrive i default):
+  #   docker compose run train -c autism_test_hoploy --dataset autism
+  #
+  # Uso con variabili d'ambiente (usa i valori di default nel campo command):
+  #   CHECKPOINT_CONFIG=autism_test_hoploy DATASET=autism docker compose up train
+  #
+  # Legge il config da:  /app/checkpoints/<CHECKPOINT_CONFIG>/config.yaml
+  # Legge il dataset da: /app/datasets/<DATASET>/
+  # Salva i checkpoint in: /app/checkpoints/<CHECKPOINT_CONFIG>/
+  train:
+    image: hoploy:latest
+    entrypoint: ["uv", "run", "python", "/app/train/train.py"]
+    command:
+      - "-c"
+      - "${CHECKPOINT_CONFIG:-autism_test_hoploy}"
+      - "--dataset"
+      - "${DATASET:-autism}"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./datasets:/app/datasets
+      - ./checkpoints:/app/checkpoints
+    restart: "no"
+    profiles:
+      - train
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["GPU-cac3bc3e-b1c3-a9e8-8317-f2d8ca3085dd"]
+              capabilities: [gpu]

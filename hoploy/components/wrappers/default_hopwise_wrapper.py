@@ -27,6 +27,12 @@ class DefaultHopwiseWrapper(BaseWrapper):
         self.cfg = cfg
         self._runtime_cfg = cfg
 
+        # Ensure all default CUDA allocations (including hopwise internals) land
+        # on the same device as specified in config, not necessarily cuda:0.
+        _device = torch.device(self.cfg.device)
+        if _device.type == "cuda":
+            torch.cuda.set_device(_device)
+
         logger.info(f"Loading checkpoint from {self.cfg.hopwise_checkpoint_file}")
         checkpoint = torch.load(
             self.cfg.hopwise_checkpoint_file,
@@ -39,6 +45,7 @@ class DefaultHopwiseWrapper(BaseWrapper):
         config["checkpoint_dir"] = str(pathlib.Path(self.cfg.hopwise_checkpoint_file).parent)
         config["load_col"]["item"] = list(getattr(self.cfg, "load_col_item", config["load_col"]["item"]))
         config["data_path"] = self.cfg.dataset
+        config["device"] = self.cfg.device
 
         if train_stage := getattr(self.cfg, "train_stage", None):
             config["train_stage"] = train_stage
@@ -56,17 +63,29 @@ class DefaultHopwiseWrapper(BaseWrapper):
 
         init_seed(config["seed"], config["reproducibility"])
         self._dataset = create_dataset(config)
+        logger.debug(f"Dataset created with tokenizer vocab size: {len(self._dataset.tokenizer)}")
 
         train_data, _, _ = data_preparation(config, self._dataset)
+        logger.debug(f"Data preparation completed. Train dataset size: {len(train_data.dataset)}")
+
+        import faulthandler, sys
+        faulthandler.dump_traceback_later(timeout=15, repeat=True, file=sys.stderr)
+
         self.model = get_model(config["model"])(config, train_data.dataset)
+        logger.debug(f"Model instance created: {self.model.__class__.__name__}")
+
+        faulthandler.cancel_dump_traceback_later()
+
         self.model = self.model.to(device=self.cfg.device, dtype=config["weight_precision"])
+        logger.debug(f"Model initialized on device {self.cfg.device} with dtype {config['weight_precision']}")
 
         hf_checkpoint_file = self.cfg.hopwise_checkpoint_file.replace("hopwise", "huggingface")
-        weights = load_file(pathlib.Path(hf_checkpoint_file) / "model.safetensors")
+        weights = load_file(str(pathlib.Path(hf_checkpoint_file) / "model.safetensors"))
         self.model.load_state_dict(weights, strict=False)
 
         self._dataset._tokenizer = AutoTokenizer.from_pretrained(hf_checkpoint_file)
         self.model = torch.compile(self.model, mode=self.cfg.compile_mode)
+        logger.debug(f"Model compiled with mode {self.cfg.compile_mode}")
 
     @property
     def dataset(self):
@@ -155,6 +174,7 @@ class DefaultHopwiseWrapper(BaseWrapper):
             "diversity_penalty": diversity_factor,
             "return_dict_in_generate": True,
             "output_scores": True,
+            # "trust_remote_code": True,
         }
 
     def update_processors(self, logits_processors=None, sequence_processor=None):

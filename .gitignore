@@ -1,4 +1,5 @@
 checkpoints/*
 datasets/*
 logs/*
+.env
 __pycache__/

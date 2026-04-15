@@ -14,7 +14,7 @@ plugin:
 wrapper:
   kgglm:
     name: autism_model
-    device: "cuda" # "cuda" or "cpu"
+    device: "cuda:1" # "cuda" or "cpu"
     hopwise_checkpoint_file: "checkpoints/autism/hopwise-distilgpt2-KGGLM-Mar-05-2026_15-19-51.pth"
     dataset: "datasets/autism"
     diversity_factor: 0.3
