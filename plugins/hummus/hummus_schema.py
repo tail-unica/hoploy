@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, PositiveInt
 
@@ -61,6 +61,33 @@ class InfoResponse(BaseModel):
     food_item_url: Optional[str] = None
 
 
+# --- SEARCH ---
+
+
+@Request("search")
+class SearchRequest(BaseModel):
+    """Request model for the food item search endpoint."""
+
+    query: str = Field(
+        description="Search query string",
+        example="Cranberry",
+    )
+    limit: Optional[PositiveInt] = Field(
+        default=10,
+        description="Maximum number of results to return",
+        example=5,
+    )
+
+
+@Response("search")
+class SearchResponse(BaseModel):
+    """Response model for the food item search endpoint."""
+
+    results: List[InfoResponse] = Field(
+        description="List of food items matching the search criteria"
+    )
+
+
 # --- RECOMMENDATION ---
 
 
@@ -76,14 +103,17 @@ class RecommendationRequest(BaseModel):
     )
     previous_recommendations: Optional[list[str]] = Field(
         default=None,
+        example=["Almond Butter Cookies"],
         description="List of previously recommended items to avoid repetition",
     )
     hard_restrictions: Optional[list[str]] = Field(
         default=None,
+        example=["Peanuts", "Shellfish"],
         description="List of food items to completely exclude from recommendations",
     )
     soft_restrictions: Optional[list[str]] = Field(
         default=None,
+        example=["Sugar", "Salt"],
         description="List of food items to penalise in recommendations",
     )
     recommendation_count: Optional[PositiveInt] = Field(

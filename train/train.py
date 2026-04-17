@@ -12,10 +12,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--config", default=os.environ.get("CHECKPOINT_CONFIG", "autism_test_hoploy"))
 parser.add_argument("-d", "--dataset", default=os.environ.get("DATASET", "autism"))
 parser.add_argument("-m", "--model", default=os.environ.get("MODEL", "PEARLM")) # PEARLM, KGGLM
-parser.add_argument("--debug", action="store_true", help="Run in debug")
 args = parser.parse_args()
 
-config_name, dataset, model, debug = args.config, args.dataset, args.model, args.debug
+config_name, dataset, model = args.config, args.dataset, args.model
 
 checkpoint_dir = f"/app/checkpoints/{config_name}"
 config_file    = f"{checkpoint_dir}/config.yaml"
@@ -85,14 +84,7 @@ map = {
     "KGGLM": run_kgglm,
 }
 
-if debug:
-    import faulthandler, sys
-    faulthandler.dump_traceback_later(timeout=30, repeat=True, file=sys.stderr)
-
 if model in map:
     map[model]()
 else:
     run_default()
-
-if debug:
-    faulthandler.cancel_dump_traceback_later()

@@ -7,6 +7,7 @@ subsequent startups skip the expensive CSV parsing entirely.
 """
 
 import csv
+import difflib
 import json
 import logging
 import pathlib
@@ -29,12 +30,13 @@ class Catalog:
     :param neighbors: Mapping of item id to ``{relation: [tail_id, …]}``.
     """
 
-    __slots__ = ("_items", "_name_index", "_neighbors")
+    __slots__ = ("_items", "_name_index", "_neighbors", "_valid_names")
 
     def __init__(self, items: dict, name_index: dict, neighbors: dict):
         self._items = items
         self._name_index = name_index
         self._neighbors = neighbors
+        self._valid_names: list[str] | None = None
 
     @property
     def items(self) -> dict:
@@ -47,6 +49,61 @@ class Catalog:
     @property
     def neighbors(self) -> dict:
         return self._neighbors
+
+    def resolve_to_valid(self, name: str, valid_ids: set[str], top_k: int = 1, cutoff: float = 0.6) -> list[str]:
+        """Resolve *name* to item ids present in *valid_ids*.
+
+        1. Exact lookup via :attr:`name_index` — if the id is in
+           *valid_ids*, return immediately.
+        2. Otherwise, fuzzy-match *name* against all catalog names whose
+           ids belong to *valid_ids* using :func:`difflib.get_close_matches`.
+
+        :param name: Human-readable item name.
+        :param valid_ids: Set of item ids known to the model vocabulary.
+        :param top_k: Maximum number of results to return.
+        :param cutoff: Similarity threshold for fuzzy matching (0–1).
+        :returns: Up to *top_k* item ids, best match first.  Empty list
+            if nothing matches above the cutoff.
+        """
+        # 1. Exact match
+        item_id = self._name_index.get(name.lower())
+        if item_id is not None and item_id in valid_ids:
+            return [item_id]
+
+        # 2. Build valid-name list lazily (cached per valid_ids set)
+        valid_name_map = {
+            n: iid for n, iid in self._name_index.items() if iid in valid_ids
+        }
+        if not valid_name_map:
+            return []
+
+        matches = difflib.get_close_matches(
+            name.lower(), valid_name_map.keys(), n=top_k, cutoff=cutoff,
+        )
+        return [valid_name_map[m] for m in matches]
+
+    def search(self, query: str, limit: int = 10, tags_field: str = "tags") -> list[dict]:
+        """Full-text search over item names and tags.
+
+        :param query: Space/comma-separated search terms.
+        :param limit: Maximum results to return.
+        :param tags_field: Name of the tags column in item records.
+        :returns: List of ``{item_id, record}`` dicts.
+        """
+        terms = [t.strip() for t in query.lower().replace(",", " ").split() if t.strip()]
+        if not terms:
+            return []
+
+        results = []
+        for item_id, record in self._items.items():
+            name = record.get("name", "").strip()
+            tags = record.get(tags_field, "").strip()
+            searchable = f"{name} {tags}".lower()
+            if any(term in searchable for term in terms):
+                results.append({"item_id": item_id, "record": record})
+                if len(results) >= limit:
+                    break
+        return results
 
 
 # ------------------------------------------------------------------

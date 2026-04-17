@@ -7,6 +7,7 @@ from hoploy.registry import Wrapper
 
 from hoploy import logger
 from hoploy.core.catalog import get_catalog
+from hoploy.core.utils import get_valid_item_ids
 
 
 # --- Catalog helpers ---
@@ -117,16 +118,22 @@ class HummusWrapper(DefaultHopwiseWrapper):
     def __init__(self, cfg):
         super().__init__(cfg)
         self._catalog = get_catalog(cfg.dataset)
+        self._valid_ids = get_valid_item_ids(self.dataset)
         logger.info(f"Loaded item catalog: {len(self._catalog.items)} items")
 
     def _names_to_recipe_ids(self, names: list) -> list:
         result = []
         for name in names:
             recipe_id = self._catalog.name_index.get(name.lower())
-            if recipe_id is None:
-                logger.warning(f"Recipe '{name}' not found in catalog, skipping.")
-            else:
+            if recipe_id is not None and recipe_id in self._valid_ids:
                 result.append(recipe_id)
+            else:
+                resolved = self._catalog.resolve_to_valid(name, self._valid_ids, top_k=1)
+                if resolved:
+                    logger.info(f"Resolved '{name}' to '{resolved[0]}' via fuzzy match.")
+                    result.append(resolved[0])
+                else:
+                    logger.warning(f"Recipe '{name}' not found in catalog or model vocab, skipping.")
         return result
 
     # -- pipeline hooks --------------------------------------------------------
@@ -218,3 +225,21 @@ class HummusWrapper(DefaultHopwiseWrapper):
         if record is None:
             return None
         return _item_to_info(record)
+
+    def search(self, request):
+        """Search the recipe catalog by name and tags.
+
+        :param request: Search request with ``query`` and ``limit``.
+        :returns: Dict with a ``results`` list of ``InfoResponse`` dicts.
+        :rtype: dict
+        """
+        query = request.query
+        limit = int(request.limit)
+
+        hits = self._catalog.search(query, limit=limit, tags_field="tags")
+        results = []
+        for hit in hits:
+            record = hit["record"]
+            results.append(_item_to_info(record))
+
+        return {"results": results}

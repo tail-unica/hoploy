@@ -68,13 +68,8 @@ class DefaultHopwiseWrapper(BaseWrapper):
         train_data, _, _ = data_preparation(config, self._dataset)
         logger.debug(f"Data preparation completed. Train dataset size: {len(train_data.dataset)}")
 
-        import faulthandler, sys
-        faulthandler.dump_traceback_later(timeout=15, repeat=True, file=sys.stderr)
-
         self.model = get_model(config["model"])(config, train_data.dataset)
         logger.debug(f"Model instance created: {self.model.__class__.__name__}")
-
-        faulthandler.cancel_dump_traceback_later()
 
         self.model = self.model.to(device=self.cfg.device, dtype=config["weight_precision"])
         logger.debug(f"Model initialized on device {self.cfg.device} with dtype {config['weight_precision']}")

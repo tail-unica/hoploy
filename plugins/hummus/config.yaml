@@ -9,12 +9,13 @@ plugin:
       info: hummus_model.info
     post:
       recommend: run
+      search: hummus_model.search
 
 wrapper:
   pearlm:
     name: hummus_model
-    device: "cuda"
-    hopwise_checkpoint_file: "checkpoints/hummus/hopwise-distilgpt2-PEARLM-Jul-31-2025_19-44-04.pth"
+    device: "cuda:0"
+    hopwise_checkpoint_file: "checkpoints/hummus/hopwise-distilgpt2-PEARLM-Apr-16-2026_16-10-34.pth"
     dataset: "datasets/hummus"
     compile_mode: "default"
     recommendation_count: 5

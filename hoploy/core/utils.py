@@ -55,6 +55,17 @@ def hopwise_encode(dataset, value, token_type):
     return token_type + str(_get_encode_lookup(dataset, token_type)[value])
 
 
+def get_valid_item_ids(dataset) -> set[str]:
+    """Return the set of item ids known to the model vocabulary.
+
+    :param dataset: The Hopwise dataset instance.
+    :returns: Set of raw item id strings that can be encoded.
+    :rtype: set[str]
+    """
+    lookup = _get_encode_lookup(dataset, PathLanguageModelingTokenType.ITEM.token)
+    return set(lookup.keys())
+
+
 def hopwise_decode(dataset, token, real_token=False):
     """Decode a Hopwise token string back to a dataset ID.
 

@@ -1,8 +1,8 @@
 FROM python:3.10-slim
 
-# Install git and ca-certificates
+# Install git, ca-certificates and procps (pgrep for py-spy helper)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl ca-certificates \
+    && apt-get install -y --no-install-recommends git curl ca-certificates procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (pinned version for reproducibility)
@@ -22,11 +22,15 @@ RUN uv sync --frozen --no-install-project
 
 COPY . .
 
+# Install py-spy as system-wide tool (root) so it can attach via SYS_PTRACE
+RUN pip install --no-cache-dir py-spy
+
 # Sync, pre-create writable directories, then hand ownership only to what's needed at runtime
 RUN uv sync --frozen \
     && mkdir -p /app/log \
     && chown -R app:app /app/log \
-    && chown app:app /app
+    && chown app:app /app \
+    && chmod +x /app/scripts/pyspy.sh
 
 USER app
 

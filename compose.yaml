@@ -10,6 +10,7 @@ services:
       - "8102:8100"
     environment:
       - PYTHONUNBUFFERED=1
+      - PYTHONFAULTHANDLER=1
       - NVIDIA_VISIBLE_DEVICES=all
     restart: unless-stopped
     volumes:
@@ -23,17 +24,17 @@ services:
               count: 2
               capabilities: [gpu]
 
-  # Servizio di training hopwise.
+  # Hopwise training service.
   #
-  # Uso con argomenti espliciti (sovrascrive i default):
+  # Usage with explicit arguments (overrides defaults):
   #   docker compose run train -c autism_test_hoploy --dataset autism
   #
-  # Uso con variabili d'ambiente (usa i valori di default nel campo command):
+  # Usage with environment variables (uses defaults from the command field):
   #   CHECKPOINT_CONFIG=autism_test_hoploy DATASET=autism docker compose up train
   #
-  # Legge il config da:  /app/checkpoints/<CHECKPOINT_CONFIG>/config.yaml
-  # Legge il dataset da: /app/datasets/<DATASET>/
-  # Salva i checkpoint in: /app/checkpoints/<CHECKPOINT_CONFIG>/
+  # Reads config from:  /app/checkpoints/<CHECKPOINT_CONFIG>/config.yaml
+  # Reads dataset from: /app/datasets/<DATASET>/
+  # Saves checkpoints to: /app/checkpoints/<CHECKPOINT_CONFIG>/
   train:
     image: hoploy:latest
     entrypoint: ["uv", "run", "python", "/app/train/train.py"]
@@ -44,6 +45,12 @@ services:
       - "${DATASET:-autism}"
     environment:
       - PYTHONUNBUFFERED=1
+    # Required by py-spy: allows root (inside container) to attach to any process
+    # via 'docker exec -u root'. See scripts/pyspy.sh.
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
     volumes:
       - ./datasets:/app/datasets
       - ./checkpoints:/app/checkpoints
