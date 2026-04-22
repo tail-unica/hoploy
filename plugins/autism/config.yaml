@@ -15,7 +15,7 @@ wrapper:
   kgglm:
     name: autism_model
     device: "cuda:1" # "cuda" or "cpu"
-    hopwise_checkpoint_file: "checkpoints/autism_test/hopwise-distilgpt2-PEARLM-Apr-15-2026_10-06-36.pth"
+    hopwise_checkpoint_file: "checkpoints/autism/hopwise-distilgpt2-KGGLM-Mar-05-2026_15-19-51.pth"
     dataset: "datasets/autism"
     diversity_factor: 0.3
     propagate_connected_entities: false  # If true, entities connected with restricted KG elements will also be restricted

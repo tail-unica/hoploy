@@ -9,6 +9,9 @@ __pycache__
 .venv
 .uv
 
+# Plugins: forniti via bind-mount a runtime (non inclusi nell'immagine)
+plugins/
+
 # Dati pesanti (montati come volumi)
 datasets/
 checkpoints/

@@ -1,40 +1,74 @@
+# ---------------------------------------------------------------------------
+# Shared base for all hoploy serving services.
+# plugins/ is a bind-mount so the image can be pulled from a registry without
+# rebuilding — users only need to provide their own plugins/ directory.
+# ---------------------------------------------------------------------------
+x-hoploy-base: &hoploy-base
+  build:
+    context: .
+    args:
+      UID: "${HOST_UID:-1000}"
+      GID: "${HOST_GID:-1000}"
+  image: hoploy:latest
+  restart: unless-stopped
+  environment:
+    - PYTHONUNBUFFERED=1
+    - PYTHONFAULTHANDLER=1
+    - NVIDIA_VISIBLE_DEVICES=all
+  volumes:
+    - ./plugins:/app/plugins        # bind-mount: no rebuild needed for plugin changes
+    - ./datasets:/app/datasets
+    - ./checkpoints:/app/checkpoints
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 2
+            capabilities: [gpu]
+
 services:
-  hoploy:
-    build:
-      context: .
-      args:
-        UID: "${HOST_UID:-1000}"
-        GID: "${HOST_GID:-1000}"
-    image: hoploy:latest
+  # ---------------------------------------------------------------------------
+  # Per-plugin serving services.
+  # Start individually:  docker compose up hummus
+  # Start together:      docker compose up hummus autism
+  # ---------------------------------------------------------------------------
+  hummus:
+    <<: *hoploy-base
     ports:
-      - "8102:8100"
+      - "${HUMMUS_PORT:-8102}:8100"
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONFAULTHANDLER=1
       - NVIDIA_VISIBLE_DEVICES=all
-    restart: unless-stopped
-    volumes:
-      - ./datasets:/app/datasets
-      - ./checkpoints:/app/checkpoints
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 2
-              capabilities: [gpu]
+      - HOPLOY_PLUGINS=plugins/hummus
 
+  autism:
+    <<: *hoploy-base
+    ports:
+      - "${AUTISM_PORT:-8103}:8100"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONFAULTHANDLER=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HOPLOY_PLUGINS=plugins/autism
+
+  # ---------------------------------------------------------------------------
   # Hopwise training service.
   #
   # Usage with explicit arguments (overrides defaults):
-  #   docker compose run train -c autism_test_hoploy --dataset autism
+  #   docker compose run --rm train -c autism_test_hoploy --dataset autism
   #
   # Usage with environment variables (uses defaults from the command field):
-  #   CHECKPOINT_CONFIG=autism_test_hoploy DATASET=autism docker compose up train
+  #   CHECKPOINT_CONFIG=autism_test_hoploy DATASET=autism docker compose run --rm train
+  #
+  # Or via the hoploy CLI (recommended):
+  #   hoploy train -c autism_test_hoploy -d autism
   #
   # Reads config from:  /app/checkpoints/<CHECKPOINT_CONFIG>/config.yaml
   # Reads dataset from: /app/datasets/<DATASET>/
   # Saves checkpoints to: /app/checkpoints/<CHECKPOINT_CONFIG>/
+  # ---------------------------------------------------------------------------
   train:
     image: hoploy:latest
     entrypoint: ["uv", "run", "python", "/app/train/train.py"]

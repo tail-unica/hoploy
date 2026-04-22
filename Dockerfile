@@ -26,9 +26,12 @@ COPY . .
 RUN pip install --no-cache-dir py-spy
 
 # Sync, pre-create writable directories, then hand ownership only to what's needed at runtime
+# /app/plugins is intentionally empty: it is replaced at runtime by the bind-mount
+# (./plugins:/app/plugins). The directory must exist so the container starts even
+# without the mount (e.g. when pulling the image from a registry).
 RUN uv sync --frozen \
-    && mkdir -p /app/log \
-    && chown -R app:app /app/log \
+    && mkdir -p /app/log /app/plugins \
+    && chown -R app:app /app/log /app/plugins \
     && chown app:app /app \
     && chmod +x /app/scripts/pyspy.sh
 
