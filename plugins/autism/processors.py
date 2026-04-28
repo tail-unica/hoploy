@@ -153,7 +153,7 @@ class AutismLogitsProcessor(ForcedLogitsProcessor):
     """
     def __init__(self, dataset, cfg, **kwargs):
         super().__init__(dataset, cfg, **kwargs)
-        self._catalog = get_catalog(str(cfg.dataset))
+        self._catalog = get_catalog()
 
     def _names_to_poi_ids(self, names):
         """Convert place names to dataset POI ids.

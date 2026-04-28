@@ -10,6 +10,7 @@ import csv
 import difflib
 import json
 import logging
+import os
 import pathlib
 from collections import defaultdict
 from functools import lru_cache
@@ -19,7 +20,24 @@ import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
 
-_PARQUET_FILENAME = ".catalog.parquet"
+# Directory where catalog parquet files are cached.
+# Override via HOPLOY_CATALOG_DIR env var; defaults to /app/catalog.
+_DEFAULT_CATALOG_DIR = "/app/catalog"
+
+
+def _catalog_dir() -> pathlib.Path:
+    return pathlib.Path(os.environ.get("HOPLOY_CATALOG_DIR", _DEFAULT_CATALOG_DIR))
+
+
+def _find_kg_stem(ds_dir: pathlib.Path) -> str:
+    """Return the stem of the first ``.kg`` file found in *ds_dir*.
+
+    For example, ``/app/dataset/autism.kg`` → ``"autism"``.
+    Falls back to the directory name if no ``.kg`` file exists.
+    """
+    for kg_file in ds_dir.glob("*.kg"):
+        return kg_file.stem
+    return ds_dir.name
 
 
 class Catalog:
@@ -222,25 +240,33 @@ def _from_parquet(path: pathlib.Path):
 # ------------------------------------------------------------------
 
 @lru_cache(maxsize=None)
-def get_catalog(dataset_path: str) -> Catalog:
+def get_catalog(dataset_path: str = "dataset") -> Catalog:
     """Return a :class:`Catalog` for *dataset_path*.
 
-    On first call for a given path the function checks for a cached
-    ``.catalog.parquet`` file.  If absent it parses the raw TSV files
-    and writes the Parquet for future startups.  Results are cached
+    On first call for a given path the function checks the catalog volume
+    (``HOPLOY_CATALOG_DIR``, default ``/app/catalog``) for a cached
+    ``<dataset>.parquet`` file named after the ``.kg`` file found in
+    *dataset_path*.  If absent it parses the raw TSV files and writes the
+    Parquet to the catalog volume for future startups.  The dataset directory
+    is never written to, so it can be mounted read-only.  Results are cached
     in-process via :func:`functools.lru_cache`.
 
     :param dataset_path: Path to the dataset directory.
     """
     ds_dir = pathlib.Path(dataset_path)
-    ds_name = ds_dir.name
-    parquet_path = ds_dir / _PARQUET_FILENAME
+    ds_name = _find_kg_stem(ds_dir)
+
+    cat_dir = _catalog_dir()
+    cat_dir.mkdir(parents=True, exist_ok=True)
+    parquet_path = cat_dir / f"{ds_name}.parquet"
 
     if parquet_path.exists():
-        logger.info("Loading catalog from parquet: %s", parquet_path)
+        logger.info("Loading catalog from cache: %s", parquet_path)
         items, name_index, neighbors = _from_parquet(parquet_path)
     else:
-        logger.info("Parsing TSV catalog for '%s' (first time, will cache as parquet)", ds_name)
+        logger.info(
+            "Parsing TSV catalog for '%s' (will cache to %s)", ds_name, parquet_path
+        )
         items, name_index, neighbors = _parse_tsv(ds_dir, ds_name)
         _to_parquet(items, name_index, neighbors, parquet_path)
 

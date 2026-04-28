@@ -1,7 +1,10 @@
 # ---------------------------------------------------------------------------
 # Shared base for all hoploy serving services.
-# plugins/ is a bind-mount so the image can be pulled from a registry without
-# rebuilding — users only need to provide their own plugins/ directory.
+# Each service bind-mounts its own plugin, dataset and shared checkpoints:
+#   /app/plugin      — the plugin directory (read-only)
+#   /app/dataset     — the dataset directory (read-only)
+#   /app/checkpoints — shared checkpoint store
+# No environment variables needed: the framework always reads from these paths.
 # ---------------------------------------------------------------------------
 x-hoploy-base: &hoploy-base
   build:
@@ -15,10 +18,6 @@ x-hoploy-base: &hoploy-base
     - PYTHONUNBUFFERED=1
     - PYTHONFAULTHANDLER=1
     - NVIDIA_VISIBLE_DEVICES=all
-  volumes:
-    - ./plugins:/app/plugins        # bind-mount: no rebuild needed for plugin changes
-    - ./datasets:/app/datasets
-    - ./checkpoints:/app/checkpoints
   deploy:
     resources:
       reservations:
@@ -26,6 +25,8 @@ x-hoploy-base: &hoploy-base
           - driver: nvidia
             count: 2
             capabilities: [gpu]
+  volumes:
+    - catalog:/app/catalog
 
 services:
   # ---------------------------------------------------------------------------
@@ -37,37 +38,29 @@ services:
     <<: *hoploy-base
     ports:
       - "${HUMMUS_PORT:-8102}:8100"
-    environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONFAULTHANDLER=1
-      - NVIDIA_VISIBLE_DEVICES=all
-      - HOPLOY_PLUGINS=plugins/hummus
+    volumes:
+      - ./plugins/hummus:/app/plugin:ro
+      - ./datasets/hummus:/app/dataset:ro
+      - ./checkpoints/hummus:/app/checkpoints:ro
 
   autism:
     <<: *hoploy-base
     ports:
       - "${AUTISM_PORT:-8103}:8100"
-    environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONFAULTHANDLER=1
-      - NVIDIA_VISIBLE_DEVICES=all
-      - HOPLOY_PLUGINS=plugins/autism
+    volumes:
+      - ./plugins/autism:/app/plugin:ro
+      - ./datasets/autism:/app/dataset:ro
+      - ./checkpoints/autism_pearlm:/app/checkpoints:ro
 
   # ---------------------------------------------------------------------------
   # Hopwise training service.
   #
-  # Usage with explicit arguments (overrides defaults):
-  #   docker compose run --rm train -c autism_test_hoploy --dataset autism
+  # Usage:
+  #   docker compose run --rm train -c <checkpoint_config> --dataset <dataset>
   #
-  # Usage with environment variables (uses defaults from the command field):
-  #   CHECKPOINT_CONFIG=autism_test_hoploy DATASET=autism docker compose run --rm train
-  #
-  # Or via the hoploy CLI (recommended):
-  #   hoploy train -c autism_test_hoploy -d autism
-  #
-  # Reads config from:  /app/checkpoints/<CHECKPOINT_CONFIG>/config.yaml
-  # Reads dataset from: /app/datasets/<DATASET>/
-  # Saves checkpoints to: /app/checkpoints/<CHECKPOINT_CONFIG>/
+  # Reads config from:  /app/checkpoints/<checkpoint_config>/config.yaml
+  # Reads dataset from: /app/datasets/<dataset>/
+  # Saves checkpoints to: /app/checkpoints/<checkpoint_config>/
   # ---------------------------------------------------------------------------
   train:
     image: hoploy:latest
@@ -98,3 +91,12 @@ services:
             - driver: nvidia
               device_ids: ["GPU-cac3bc3e-b1c3-a9e8-8317-f2d8ca3085dd"]
               capabilities: [gpu]
+
+# ---------------------------------------------------------------------------
+# Named volumes
+# ---------------------------------------------------------------------------
+volumes:
+  catalog:
+    # Shared catalog cache: parquet files built from dataset TSVs.
+    # Mounted read-write on all serving services; datasets remain read-only.
+    driver: local

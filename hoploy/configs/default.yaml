@@ -2,15 +2,12 @@ wrapper:
   pearlm:
     name: pearlm
     device: "cpu"
-    hopwise_checkpoint_file: ""
-    dataset: "default" 
     compile_mode: "default"
   kgglm:
     name: kgglm
     device: "cpu"
-    hopwise_checkpoint_file: ""
     diversity_factor: 0.3
-    propagate_connected_entities: false 
+    propagate_connected_entities: false
     compile_mode: "default"
     recommendation_count: 5
     train_stage: "pretrain"

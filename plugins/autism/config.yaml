@@ -15,8 +15,6 @@ wrapper:
   kgglm:
     name: autism_model
     device: "cuda:1" # "cuda" or "cpu"
-    hopwise_checkpoint_file: "checkpoints/autism/hopwise-distilgpt2-KGGLM-Mar-05-2026_15-19-51.pth"
-    dataset: "datasets/autism"
     diversity_factor: 0.3
     propagate_connected_entities: false  # If true, entities connected with restricted KG elements will also be restricted
     compile_mode: "default"  # Options: "default", "reduce-overhead", "max-autotune"
@@ -42,7 +40,6 @@ wrapper:
 
 sequence_processor:
   autism_sequence_processor:
-    dataset: "datasets/autism"
     name: autism_sequence_processor
     force_paths: # Sequences of relation types to force in the generated paths
       - ['HAS_SENSORY_FEATURE', 'HAS_SENSORY_FEATURE_r'] # type 2. [I] [HAS_SENSORY_FEATURE] [E: sensory_feature] [HAS_SENSORY_FEATURE_r] [I]
@@ -54,7 +51,6 @@ sequence_processor:
 
 logits_processors:
   autism_logits_processor:
-    dataset: "datasets/autism"
     name: autism_logits_processor
     force_paths:
       - ['HAS_SENSORY_FEATURE', 'HAS_SENSORY_FEATURE_r'] # type 2. [I] [HAS_SENSORY_FEATURE] [E: sensory_feature] [HAS_SENSORY_FEATURE_r] [I]
@@ -63,6 +59,5 @@ logits_processors:
       - ['HAS_SENSORY_COMPATIBILITY_r', '[UI-Relation]'] # TYPE 7. [E: sensory_feature] [HAS_SENSORY_COMPATIBILITY_r] [U] [UI-Relation] [I]
       - ['HAS_SENSORY_FEATURE', 'HAS_SENSORY_FEATURE_r', '[UI-Relation]'] # TYPE 7 (variance)
   autism_restricted_logits_processor:
-    dataset: "datasets/autism"
     name: autism_restricted_logits_processor
     propagate_connected_entities: false

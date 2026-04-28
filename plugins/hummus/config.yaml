@@ -15,8 +15,6 @@ wrapper:
   pearlm:
     name: hummus_model
     device: "cuda:0"
-    hopwise_checkpoint_file: "checkpoints/hummus/hopwise-distilgpt2-PEARLM-Apr-16-2026_16-10-34.pth"
-    dataset: "datasets/hummus"
     compile_mode: "default"
     recommendation_count: 5
     diversity_factor: 0.5
@@ -24,14 +22,11 @@ wrapper:
 
 logits_processors:
   hummus_logits_processor:
-    dataset: "datasets/hummus"
     name: hummus_logits_processor
   hummus_restricted_logits_processor:
-    dataset: "datasets/hummus"
     name: hummus_restricted_logits_processor
     propagate_connected_entities: false
 
 sequence_processor:
   hummus_sequence_processor:
-    dataset: "datasets/hummus"
     name: hummus_sequence_processor

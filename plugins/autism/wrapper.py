@@ -230,7 +230,7 @@ class AutismWrapper(DefaultHopwiseWrapper):
 
     def __init__(self, cfg):
         super().__init__(cfg)
-        self._catalog = get_catalog(cfg.dataset)
+        self._catalog = get_catalog()
         logger.info(f"Loaded item catalog: {len(self._catalog.items)} items")
 
     def _names_to_poi_ids(self, names: list) -> list:

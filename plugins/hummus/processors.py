@@ -22,7 +22,7 @@ class HummusLogitsProcessor(DefaultHopwiseLogitsProcessor):
 
     def __init__(self, dataset, cfg, **kwargs):
         super().__init__(dataset, cfg, **kwargs)
-        self._catalog = get_catalog(str(cfg.dataset))
+        self._catalog = get_catalog()
         self._valid_ids = get_valid_item_ids(dataset)
 
     def _names_to_recipe_ids(self, names):
@@ -67,7 +67,7 @@ class HummusRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
 
     def __init__(self, dataset, cfg, **kwargs):
         super().__init__(dataset, cfg, **kwargs)
-        self._catalog = get_catalog(str(cfg.dataset))
+        self._catalog = get_catalog()
         self._valid_ids = get_valid_item_ids(dataset)
 
     def _names_to_recipe_ids(self, names):

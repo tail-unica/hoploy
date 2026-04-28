@@ -10,6 +10,19 @@ from hoploy.components.wrappers.base import BaseWrapper
 from hoploy.core.registry import Wrapper
 from hoploy.core.utils import hopwise_encode, hopwise_decode
 
+_CHECKPOINTS_DIR = pathlib.Path("/app/checkpoints")
+_DATASET_DIR = "/app/dataset"
+
+
+def _find_hopwise_checkpoint() -> pathlib.Path:
+    """Find the first ``hopwise*.pth`` file in ``/app/checkpoints``."""
+    matches = sorted(_CHECKPOINTS_DIR.glob("hopwise*.pth"))
+    if not matches:
+        raise FileNotFoundError(
+            f"No hopwise*.pth checkpoint found in {_CHECKPOINTS_DIR}"
+        )
+    return matches[0]
+
 
 @Wrapper("default_model")
 class DefaultHopwiseWrapper(BaseWrapper):
@@ -33,23 +46,24 @@ class DefaultHopwiseWrapper(BaseWrapper):
         if _device.type == "cuda":
             torch.cuda.set_device(_device)
 
-        logger.info(f"Loading checkpoint from {self.cfg.hopwise_checkpoint_file}")
+        checkpoint_file = _find_hopwise_checkpoint()
+        logger.info(f"Loading checkpoint from {checkpoint_file}")
         checkpoint = torch.load(
-            self.cfg.hopwise_checkpoint_file,
+            checkpoint_file,
             map_location=self.cfg.device,
             weights_only=False,
         )
 
         config = checkpoint["config"]
-        
-        config["checkpoint_dir"] = str(pathlib.Path(self.cfg.hopwise_checkpoint_file).parent)
+
+        config["checkpoint_dir"] = str(checkpoint_file.parent)
         config["load_col"]["item"] = list(getattr(self.cfg, "load_col_item", config["load_col"]["item"]))
-        config["data_path"] = self.cfg.dataset
+        config["data_path"] = _DATASET_DIR
         config["device"] = self.cfg.device
 
         if train_stage := getattr(self.cfg, "train_stage", None):
             config["train_stage"] = train_stage
-        
+
         config._set_env_behavior()
 
         from hopwise.data.utils import data_preparation
@@ -74,7 +88,7 @@ class DefaultHopwiseWrapper(BaseWrapper):
         self.model = self.model.to(device=self.cfg.device, dtype=config["weight_precision"])
         logger.debug(f"Model initialized on device {self.cfg.device} with dtype {config['weight_precision']}")
 
-        hf_checkpoint_file = self.cfg.hopwise_checkpoint_file.replace("hopwise", "huggingface")
+        hf_checkpoint_file = str(checkpoint_file).replace("hopwise", "huggingface")
         weights = load_file(str(pathlib.Path(hf_checkpoint_file) / "model.safetensors"))
         self.model.load_state_dict(weights, strict=False)
 
