@@ -6,7 +6,7 @@ import shutil
 from transformers.trainer_utils import get_last_checkpoint
 from hopwise.quick_start import run_hopwise
 
-# docker compose run train -c autism_test_hoploy --dataset autism
+# docker compose run train -c autism_test_hoploy -d autism
 # CHECKPOINT_CONFIG=autism_test_hoploy DATASET=autism docker compose up train
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--config", default=os.environ.get("CHECKPOINT_CONFIG", "autism_test_hoploy"))

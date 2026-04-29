@@ -28,6 +28,28 @@ x-hoploy-base: &hoploy-base
   volumes:
     - catalog:/app/catalog
 
+x-train-base: &train-base
+  image: hoploy:latest
+  user: "root"
+  command:
+    - "-c"
+    - "${CHECKPOINT_CONFIG:-movielens}"
+    - "-d"
+    - "${DATASET:-movielens}"
+  environment:
+    - PYTHONUNBUFFERED=1
+  restart: "no"
+  volumes:
+    - /home/recsysdatasets:/app/datasets:ro
+    - ./checkpoints:/app/checkpoints
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ["${GPU_DEVICE_1}"]
+            capabilities: [gpu]
+
 services:
   # ---------------------------------------------------------------------------
   # Per-plugin serving services.
@@ -50,47 +72,33 @@ services:
     volumes:
       - ./plugins/autism:/app/plugin:ro
       - ./datasets/autism:/app/dataset:ro
-      - ./checkpoints/autism_pearlm:/app/checkpoints:ro
+      - ./checkpoints/autism:/app/checkpoints:ro
 
   # ---------------------------------------------------------------------------
   # Hopwise training service.
   #
   # Usage:
-  #   docker compose run --rm train -c <checkpoint_config> --dataset <dataset>
+  #   docker compose run --rm train -c <checkpoint_config> -d <dataset>
   #
   # Reads config from:  /app/checkpoints/<checkpoint_config>/config.yaml
   # Reads dataset from: /app/datasets/<dataset>/
   # Saves checkpoints to: /app/checkpoints/<checkpoint_config>/
   # ---------------------------------------------------------------------------
   train:
-    image: hoploy:latest
+    <<: *train-base
     entrypoint: ["uv", "run", "python", "/app/train/train.py"]
-    command:
-      - "-c"
-      - "${CHECKPOINT_CONFIG:-autism_test_hoploy}"
-      - "--dataset"
-      - "${DATASET:-autism}"
-    environment:
-      - PYTHONUNBUFFERED=1
-    # Required by py-spy: allows root (inside container) to attach to any process
-    # via 'docker exec -u root'. See scripts/pyspy.sh.
+    profiles:
+      - train
     cap_add:
       - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
-    volumes:
-      - ./datasets:/app/datasets
-      - ./checkpoints:/app/checkpoints
-    restart: "no"
+
+  hyper:
+    <<: *train-base
+    entrypoint: ["uv", "run", "python", "/app/train/hyper.py"]
     profiles:
-      - train
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["GPU-cac3bc3e-b1c3-a9e8-8317-f2d8ca3085dd"]
-              capabilities: [gpu]
+      - hyper
 
 # ---------------------------------------------------------------------------
 # Named volumes
