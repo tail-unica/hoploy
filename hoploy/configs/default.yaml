@@ -3,6 +3,8 @@ wrapper:
     name: pearlm
     device: "cpu"
     compile_mode: "default"
+    dataset: "/app/dataset"
+    checkpoints: "/app/checkpoints"
   kgglm:
     name: kgglm
     device: "cpu"
@@ -11,6 +13,8 @@ wrapper:
     compile_mode: "default"
     recommendation_count: 5
     train_stage: "pretrain"
+    dataset: "/app/dataset"
+    checkpoints: "/app/checkpoints"
 
 logits_processors:
   default:

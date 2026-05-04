@@ -30,11 +30,23 @@ hp = HyperTuning(
     fixed_config_file_list=[config_file],
 )
 
+hp = HyperTuning(
+    objective_function,
+    # tuner=tool,
+    algo='exhaustive',
+    early_stop=10,
+    max_evals=100,
+    params_file=params_file,
+    fixed_config_file_list=[config_file],
+    output_path=f"{checkpoint_dir}/hyper.result",
+    resume=False,
+)
+
 # run
 hp.run()
 
 # export result to the file
-hp.export_result(output_file=f'{checkpoint_dir}/hyper.result')
+# hp.export_result(output_file=f'{checkpoint_dir}/hyper.result')
 
 # print best parameters
 print('best params: ', hp.best_params)

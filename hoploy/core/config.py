@@ -74,8 +74,8 @@ def _merge_plugin_configs(config: DictConfig, plugin_paths: tuple[str, ...]) -> 
                 config[section] = OmegaConf.create({
                     key: entry for key, entry in config[section].items()
                     if isinstance(entry, DictConfig) and str(entry.get("name", "")) in allowed_names
-                })
-
+                })         
+                
     # Replace the raw plugin list/section with the collected metadata dict
     config_dict = OmegaConf.to_container(config, resolve=False)
     config_dict["plugin"] = merged_plugins

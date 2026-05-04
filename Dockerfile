@@ -39,4 +39,4 @@ USER app
 EXPOSE 8100
 
 # Log level configurable via LOG_LEVEL env var (default: info)
-CMD ["uv", "run", "python", "-O", "-m", "uvicorn", "hoploy.main:app", "--log-level", "info", "--host", "0.0.0.0", "--port", "8100"]
+CMD ["uv", "run", "--frozen", "python", "-O", "-m", "uvicorn", "hoploy.main:app", "--log-level", "info", "--host", "0.0.0.0", "--port", "8100"]

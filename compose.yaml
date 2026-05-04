@@ -4,7 +4,6 @@
 #   /app/plugin      — the plugin directory (read-only)
 #   /app/dataset     — the dataset directory (read-only)
 #   /app/checkpoints — shared checkpoint store
-# No environment variables needed: the framework always reads from these paths.
 # ---------------------------------------------------------------------------
 x-hoploy-base: &hoploy-base
   build:

@@ -10,16 +10,13 @@ from hoploy.components.wrappers.base import BaseWrapper
 from hoploy.core.registry import Wrapper
 from hoploy.core.utils import hopwise_encode, hopwise_decode
 
-_CHECKPOINTS_DIR = pathlib.Path("/app/checkpoints")
-_DATASET_DIR = "/app/dataset"
 
-
-def _find_hopwise_checkpoint() -> pathlib.Path:
-    """Find the first ``hopwise*.pth`` file in ``/app/checkpoints``."""
-    matches = sorted(_CHECKPOINTS_DIR.glob("hopwise*.pth"))
+def _find_hopwise_checkpoint(checkpoints_dir: str) -> pathlib.Path:
+    """Find the first ``hopwise*.pth`` file in the specified checkpoints directory."""
+    matches = sorted(pathlib.Path(checkpoints_dir).glob("hopwise*.pth"))
     if not matches:
         raise FileNotFoundError(
-            f"No hopwise*.pth checkpoint found in {_CHECKPOINTS_DIR}"
+            f"No hopwise*.pth checkpoint found in {checkpoints_dir}"
         )
     return matches[0]
 
@@ -46,7 +43,7 @@ class DefaultHopwiseWrapper(BaseWrapper):
         if _device.type == "cuda":
             torch.cuda.set_device(_device)
 
-        checkpoint_file = _find_hopwise_checkpoint()
+        checkpoint_file = _find_hopwise_checkpoint(self.cfg.checkpoints)
         logger.info(f"Loading checkpoint from {checkpoint_file}")
         checkpoint = torch.load(
             checkpoint_file,
@@ -58,7 +55,7 @@ class DefaultHopwiseWrapper(BaseWrapper):
 
         config["checkpoint_dir"] = str(checkpoint_file.parent)
         config["load_col"]["item"] = list(getattr(self.cfg, "load_col_item", config["load_col"]["item"]))
-        config["data_path"] = _DATASET_DIR
+        config["data_path"] = self.cfg.dataset
         config["device"] = self.cfg.device
 
         if train_stage := getattr(self.cfg, "train_stage", None):
