@@ -2,341 +2,277 @@
 
 Serving layer for [Hopwise](https://github.com/tail-unica/hopwise) recommendation models.
 
-Hoploy wraps Hopwise models — which generate recommendations along real knowledge-graph paths — into a deployable REST API service. Plugin authors define domain-specific behaviour by implementing a small set of hooks; the framework handles checkpoint loading, tokenization, beam-search generation, logits/sequence processing, and API routing transparently.
+Hoploy is an inference and explanation layer for pre-trained path-reasoning models. It wraps Hopwise models into a deployable REST API service, separating a reusable inference workflow from plugin-defined application logic. The framework handles configuration loading, API construction, component validation, model execution, and request orchestration; plugins provide the domain-specific elements — request and response schemas, preference mapping, decoding controls, and explanation rendering.
 
-## Intended use
 
-Hoploy is designed as a reusable framework. A practitioner installs it as a dependency, writes a plugin directory for their domain, and launches the service with three lines:
+## Architecture
 
-```python
-# main.py
-from hoploy.core.config import Config
-from hoploy.core.pipeline import Pipe
-from hoploy.core.factory import factory
+The design of Hoploy addresses two practical challenges. On the one hand, a plugin must translate user-facing inputs (selected items, constraints, contextual preferences) into the semantic space of the knowledge graph. On the other hand, it must interact with the representation expected by the path-reasoning model, where paths are generated as token sequences and later converted back into KG triples. Hoploy makes this interaction explicit through a small set of extension components while preserving a fixed execution flow for model inference.
 
-config   = Config("plugins/my_domain")
-pipeline = Pipe(config)
-app      = factory(pipeline, config)
-```
+At startup, Hoploy loads the plugin configuration, discovers plugin-defined schemas and components, validates their interfaces, and initializes the inference pipeline. At request time, the pipeline maps the incoming payload to model-compatible inputs, applies request-specific decoding controls, executes path generation, and converts the generated KG paths into the application response.
 
-`Config` loads and merges `hoploy`'s built-in defaults with the plugin configuration. `Pipe` instantiates the wrapper and all processors declared in the plugin. `factory` builds a FastAPI application with endpoints wired to the plugin schema, then exposes it via Uvicorn.
+### Configuration and API Binding
 
-No framework internals need to be modified. Everything domain-specific lives entirely inside the plugin directory.
+A Hoploy application is defined by two configuration levels. The **framework configuration** (`hoploy/configs/default.yaml`) specifies generic inference behaviour. The **plugin configuration** (`your-plugin/config.yaml`) declares the components and endpoints required by a target application. The merged configuration is the single source of information for both pipeline initialization and API construction.
 
----
+The API layer is generated from the plugin specification rather than hard-coded in the framework. A plugin declares the request and response schemas associated with each endpoint, together with the pipeline operation or component method that should handle the request. During initialization, Hoploy builds the API application and binds each endpoint to the initialized pipeline. The framework exposes only infrastructure-level endpoints (e.g. health checks); all application endpoints are defined by plugins.
 
-## Architecture overview
+### Extension Components
 
-The pipeline executes the following steps on each request:
+Plugins extend Hoploy through three component roles:
 
-1. `wrapper.distill(request)` — translate the API payload to Hopwise input token sequences.
-2. `wrapper.handle(request)` — configure generation parameters for the current request.
-3. `processor.handle(request)` for each logits and sequence processor — configure constraints.
-4. `wrapper.recommend(inputs)` — beam-search generation (internal; not overrideable).
-5. `wrapper.expand(output, request)` — map raw model output to the API response schema.
+| Component | Required | Role |
+|---|---|---|
+| **Wrapper** | Yes | Maps requests to model inputs, configures inference, renders responses |
+| **Logits processors** | No | Constrain or guide token-level decoding during path generation |
+| **Sequence processor** | No | Post-process complete generated paths before response rendering |
 
----
+A **catalog service** supports all components by providing a standard interface for resolving application-level identifiers (names, external IDs) into the tokens used by the Hopwise model, and for accessing KG entity metadata.
 
-## Plugin structure
+#### Wrapper
 
-A plugin is a self-contained directory that is passed to `Config`:
+The wrapper is the central component. It is responsible for three operations:
+
+1. **Input distillation** — translates the incoming request (e.g. selected restaurants, dishes, items) into KG entities and token sequences expected by the model.
+2. **Inference configuration** — derives request-specific parameters such as the number of recommendations and diversity level.
+3. **Output expansion** — converts the generated paths back into KG triples, enriches them with catalog metadata, and renders the final response including recommendations and human-readable explanations.
+
+Path generation itself is handled by the framework through the underlying Hopwise inference procedure; the wrapper controls only how inputs and outputs are interpreted.
+
+#### Logits Processors
+
+Logits processors customize decoding while paths are being generated. At each generation step they adjust the scores of valid candidate tokens before the next token is selected, following the constrained decoding paradigm used in path-reasoning models. Multiple processors can be composed in declaration order. Processors operate on KG-aware candidate representations exposed by the framework, so plugin authors express decoding behaviour in terms of entities and relations without manipulating tokenizer internals directly.
+
+The framework provides default processors for common behaviours: graph-valid traversal constraints, masking of previously recommended items, entity restrictions, and relation-pattern forcing. Plugins can reuse these defaults or specialize them.
+
+#### Sequence Processor
+
+The sequence processor operates after candidate paths have been produced and before they are returned to the wrapper for expansion. Unlike logits processors, it receives complete generated paths and can therefore apply operations such as duplicate removal, invalid sequence filtering, score-based sorting, or domain-specific re-ranking. This component is optional.
+
+### Request Lifecycle
+
+For each incoming recommendation request, Hoploy executes a fixed four-step sequence:
+
+1. **Input distillation** — the wrapper maps the request payload to model-compatible inputs. Selected items are resolved through the catalog and converted into the representation expected by the Hopwise model.
+2. **Request-specific configuration** — the wrapper and optional processors derive inference parameters from the request (number of recommendations, entity restrictions, etc.).
+3. **Path generation** — the framework executes the recommendation procedure, running the underlying Hopwise model to produce candidate reasoning paths. Plugin-defined logits and sequence processors influence decoding through their configured hooks.
+4. **Output expansion** — the wrapper converts the generated paths back into KG triples, enriches them with catalog metadata, and renders the application response including recommendations and human-readable explanations.
+
+Plugins can customize how requests are interpreted, how decoding is constrained, how generated paths are post-processed, and how explanations are rendered. They do not re-implement the generic inference workflow, the model prediction procedure, or the token selection loop.
+
+
+## Tutorial
+
+This tutorial walks through building and deploying a Hoploy plugin from scratch. The following assumes a Docker-based deployment. Before proceeding, ensure Docker is installed on your machine.
+
+### Step 0: Clone and build
 
 ```bash
-plugins/my_domain/
-    __init__.py           # entry point; imports trigger component registration
-    model.py              # wrapper subclass: distill / handle / expand
-    processors.py         # logits and sequence processor subclasses
-    my_domain_schema.py   # Pydantic request/response models
-    config.yaml           # plugin-specific configuration
+git clone https://github.com/tail-unica/hoploy
+cd hoploy
+docker compose build
 ```
 
-All components are registered with the framework via decorators (`@Wrapper`, `@LogitsProcessor`, `@SequenceProcessor`) and referenced by name in `config.yaml`.
+The build step resolves all dependencies from the lockfile, ensuring a reproducible environment across machines.
 
----
+### Step 1: Create the plugin directory
 
-## Configuration levels
+A Hoploy plugin is a Python package. Create a directory with the following structure:
 
-Plugin behaviour is controlled at three distinct levels. Moving from level 1 to level 3 provides progressively more control over the generation process.
+```
+your-plugin/
+├── __init__.py
+├── config.yaml
+├── your_schema.py
+└── your_processors.py
+```
 
-### Level 1 — Wrapper and processors with `handle()`
+No framework internals need to be modified — all domain-specific logic lives entirely inside this directory.
 
-This is the standard integration path. The plugin author implements `handle()` on the wrapper and on each processor to translate the incoming API request into generation state before beam search runs.
+### Step 2: Define your schemas
 
-**Wrapper** (`DefaultHopwiseWrapper` subclass)
-
-The wrapper has three required hooks:
-
-| Method | Responsibility |
-|---|---|
-| `distill(request)` | Translate API payload into Hopwise token sequences passed to generation. |
-| `handle(request)` | Configure generation parameters (e.g. number of recommendations, diversity). |
-| `expand(output, request)` | Map the raw `(scores, item_ids, explanations)` tuple to the API response dict. |
-
-Methods `recommend`, `encode`, and `decode` are implemented by the framework and must not be overridden.
+Schemas define the shape of your API: what each endpoint accepts and what it returns. Hoploy uses them to automatically validate requests and generate the API surface at startup. Define them as Pydantic models decorated with `@Request` and `@Response`.
 
 ```python
-from hoploy.components import DefaultHopwiseWrapper
-from hoploy.registry import Wrapper
-from hoploy.core.utils import hopwise_encode
+# your-plugin/your_schema.py
+from pydantic import BaseModel
+from hoploy import Request, Response
 
-@Wrapper
-class MyWrapper(DefaultHopwiseWrapper):
-
-    def distill(self, request):
-        return [
-            "[BOS] " + hopwise_encode(self.dataset, item_id, "I")
-            for item_id in request.input
-        ]
-
-    def handle(self, request):
-        self.recommendation_count = request.n
-        return self
-
-    def expand(self, output, request):
-        scores, item_ids, explanations = output
-        return {"recommendations": item_ids, "scores": scores, "explanations": explanations}
-```
-
-**Logits processor** (`DefaultHopwiseLogitsProcessor` subclass)
-
-The logits processor controls which tokens are allowed or scored at each generation step. `handle()` sets up restrictions from the request before generation begins. A second optional hook, `score_adjustment()`, can apply fine-grained score deltas at generation time.
-
-All processor methods accept Hopwise IDs — typed token strings such as `"I7"`, `"E17"`, `"R3"`. The plugin author is responsible for calling `hopwise_encode()` in `handle()` to produce these tokens from domain identifiers. The framework translates Hopwise IDs to internal tokenizer IDs transparently; plugin authors never interact with the tokenizer.
-
-```python
-from hoploy.components import DefaultHopwiseLogitsProcessor
-from hoploy.registry import LogitsProcessor
-from hoploy.core.utils import hopwise_encode
-
-@LogitsProcessor
-class MyLogitsProcessor(DefaultHopwiseLogitsProcessor):
-
-    def handle(self, request):
-        if request.previous_recommendations:
-            hopwise_ids = [
-                hopwise_encode(self.dataset, item_id, "I")
-                for item_id in request.previous_recommendations
-            ]
-            self.set_previous_recommendations(hopwise_ids)
-        return self
-```
-
-Available methods callable from `handle()`:
-
-| Method | Accepts | Effect |
-|---|---|---|
-| `set_previous_recommendations(hopwise_ids)` | Hopwise item tokens (e.g. `["I7", "I42"]`) | Mask items the user has already seen. |
-| `set_restrictions(hard_restrictions, soft_restrictions)` | Hopwise tokens (e.g. `["E17", "E23"]`) | Ban or penalise specific entities or items. |
-| `clear_restrictions()` | — | Reset all restrictions. |
-
-The optional `score_adjustment()` hook receives Hopwise IDs in `"type:value"` format and returns score deltas:
-
-```python
-def score_adjustment(self, hopwise_current, hopwise_candidates):
-    # "type:value" format, e.g. "entity:SensoryFeature.NOISE.2.3" or "item:55"
-    return {"item:55": float("-inf")}  # hard-ban item 55
-```
-
-**Sequence processor** (`DefaultHopwiseSequenceScorePostProcessor` subclass)
-
-The sequence processor re-scores or filters complete generated sequences. `handle()` configures its parameters from the request.
-
-```python
-from hoploy.components import DefaultHopwiseSequenceScorePostProcessor
-from hoploy.registry import SequenceProcessor
-
-@SequenceProcessor
-class MySequenceProcessor(DefaultHopwiseSequenceScorePostProcessor):
-
-    def handle(self, request):
-        # configure path boosting, filtering, etc.
-        return self
-```
-
----
-
-### Level 2 — Custom generation with `ForcedLogitsProcessor` and `ForcedSequenceScorePostProcessor`
-
-When the default beam-search constraints are insufficient, the framework provides two specialised base classes that allow the plugin to declare explicit relation-path patterns to force or boost during generation.
-
-`ForcedLogitsProcessor` restricts the token vocabulary at each step so that generation can only follow declared relation sequences. `ForcedSequenceScorePostProcessor` re-scores complete paths by pattern matching the generated relation sequence against the declared patterns and applying multiplier boosts.
-
-These classes still expose `handle()` as the request-wiring hook; the path-pattern logic is configured via `force_paths` in `config.yaml` and applied automatically.
-
----
-
-### Level 3 — Full override with `process_scores_rec`
-
-For advanced cases that cannot be expressed through score adjustments or path patterns, any logits processor subclass may override `process_scores_rec(scores, input_ids, ...)` directly. This is a low-level escape hatch that exposes the raw score tensor and should only be used when levels 1 and 2 are insufficient.
-
----
-
-## Endpoint routing
-
-Endpoints are declared in the plugin `config.yaml` under the `plugin.schema` key:
-
-```yaml
-plugin:
-  schema:
-    module: my_domain_schema
-    get:
-      /info/{item}: my_wrapper.info
-    post:
-      /recommend: run
-      /search:    my_wrapper.search
-```
-
-The `run` handler invokes the full pipeline. All other values reference methods on the wrapper instance. The framework resolves request and response schemas automatically by convention (`<Name>Request` / `<Name>Response`) or via explicit class names.
-
----
-
-## Request and response schemas with Pydantic
-
-Schemas are plain [Pydantic](https://docs.pydantic.dev/) models. Pydantic is a data validation library for Python that uses type annotations and class attributes to describe the expected shape of incoming and outgoing data. At request time, the framework parses the raw JSON body through the request model, validates all types and constraints, and raises a `422 Unprocessable Entity` response automatically if validation fails. At response time, only fields declared in the response model are serialised.
-
-Plugin authors define their schemas in the module referenced by `plugin.schema.module` in `config.yaml`. No registration decorators are required; the framework discovers schemas by class-name convention.
-
-```python
-# my_domain_schema.py
-from pydantic import BaseModel, Field
-
-class RecommendRequest(BaseModel):
-    user_id: str = Field(description="Unique user identifier")
-    n: int      = Field(default=5, ge=1, le=20)
-
-class RecommendResponse(BaseModel):
-    recommendations: list[str]
-    scores: list[float]
-    explanations: list[str]
-```
-
-Richer models — with enumerations, nested structures, cross-field validators via `@model_validator`, and `Field` constraints such as `ge`, `le`, `min_length` — are fully supported. See `plugins/autism/autism_schema.py` for a complete example using generic sensory-feature sets.
-
-**Connecting the schema to Hopwise**
-
-One of the responsibilities of `distill()` is to bridge the domain schema (where identifiers come from the request model) to the internal Hopwise token space. The translation utilities described below are the intended interface for this bridge.
-
----
-
-## Hopwise ID typing
-
-Hopwise encodes every element of the knowledge graph as a typed token string. Plugin authors encounter these tokens when implementing `distill()`, `expand()`, and processor hooks. The token format is a single uppercase letter followed by an integer index:
-
-| Prefix | Type | Example |
-|---|---|---|
-| `I` | Item | `I42` |
-| `E` | Entity (KG node) | `E17` |
-| `R` | Relation (KG edge type) | `R3` |
-| `U` | User | `U8` |
-
-These indices are position-based and specific to the dataset loaded at runtime. They do not correspond directly to the original dataset identifiers (such as a CSV row number or an external ID string). All translation between dataset identifiers and Hopwise tokens must go through the utility functions in `hoploy.core.utils`.
-
-| Function | Description |
-|---|---|
-| `hopwise_encode(dataset, value, token_type)` | Dataset ID string to Hopwise token (e.g. `"42"` to `"I7"`). |
-| `hopwise_decode(dataset, token, real_token=False)` | Hopwise token to dataset ID; pass `real_token=True` for the human-readable label. |
-| `id2tokenizer_token(dataset, ids, token_type)` | Batch of dataset ID strings to tokenizer-internal integer IDs; use this to feed processor constraint methods. |
-
-`token_type` accepts the `PathLanguageModelingTokenType.*.token` constants from Hopwise (`"I"`, `"E"`, `"R"`, `"U"`).
-
-In `score_adjustment()` and in generated sequences passed to `expand()`, Hopwise IDs are represented as `"type:value"` strings (e.g. `"entity:SensoryFeature.NOISE.2.3"` or `"item:55"`). These are the decoded, human-readable forms of the same token space and do not require further translation.
-
----
-
-## Default endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/recommend` | Run the full recommendation pipeline. |
-| `GET`  | `/info/{item}` | Item information lookup (delegated to `wrapper.info`). |
-| `POST` | `/search` | Item search (delegated to `wrapper.search`). |
-| `GET`  | `/health` | Liveness check. |
-
-Additional endpoints are registered automatically for every route declared in the plugin `config.yaml`.
-
-### Registration
-
-Components are registered via decorators from `hoploy.core.registry`:
-
-```python
-from hoploy.core.registry import Wrapper, LogitsProcessor, SequenceProcessor
-
-@Wrapper("my_model")
-class MyWrapper(DefaultHopwiseWrapper): ...
-
-@LogitsProcessor("my_logits_processor")
-class MyLogitsProcessor(DefaultHopwiseLogitsProcessor): ...
-
-@SequenceProcessor("my_sequence_processor")
-class MySequenceProcessor(DefaultHopwiseSequenceScorePostProcessor): ...
-```
-
-Request/response schemas use `@Request` / `@Response` decorators to declare which endpoint they belong to:
-
-```python
-from hoploy.core.registry import Request, Response
-
-@Request("recommend")
+@Request("/recommend")
 class MyRequest(BaseModel):
-    user_id: str
+    user_id: int
+    liked_items: list[str]
+    disliked_items: list[str]
 
-@Response("recommend")
+@Response("/recommend")
 class MyResponse(BaseModel):
     recommendations: list[str]
+    explanation: str
 ```
 
-### Configuration
+### Step 3: Implement the Wrapper
 
-Reference your registered components in `plugins/my_domain/config.yaml`:
+The wrapper is the only mandatory component. Subclass `DefaultHopwiseWrapper` and implement `distill` (input mapping) and `expand` (output rendering). Use `handle` to derive request-specific inference parameters.
+
+```python
+# your-plugin/your_processors.py
+from hopwise.utils import PathLanguageModelingTokenType
+from hoploy.registry import Wrapper
+from hoploy.components import DefaultHopwiseWrapper
+
+@Wrapper("my-wrapper")
+class MyWrapper(DefaultHopwiseWrapper):
+    def distill(self, request):
+        """Translate request preferences into model-ready token sequences."""
+        separator = self.dataset.path_token_separator
+        bos = self.dataset.tokenizer.bos_token
+        raw_inputs = []
+        for item in request.liked_items:
+            token = self.encode(item, PathLanguageModelingTokenType.ITEM.token)
+            raw_inputs.append(separator.join([bos, token]))
+        return raw_inputs
+
+    def handle(self, request):
+        """Derive request-specific inference parameters."""
+        super().handle(request)
+        return self
+
+    def expand(self, values, request):
+        """Convert generated paths into the application response."""
+        scores, recommendations, explanations = values
+        return {
+            "recommendations": [self.decode(rec) for rec in recommendations],
+            "explanation": [
+                "".join([self.decode(t, real_token=True) for t in exp[1:]])
+                for exp in explanations
+            ],
+        }
+```
+
+### Step 4: Implement Logits Processors (optional)
+
+Logits processors guide or constrain token-level decoding during path generation. Multiple processors can be declared and are applied in declaration order.
+
+```python
+from hopwise.utils import PathLanguageModelingTokenType
+from hoploy.registry import LogitsProcessor
+from hoploy.components import RestrictedHopwiseLogitsProcessor
+
+@LogitsProcessor("my-logits-processor")
+class MyLogitsProcessor(RestrictedHopwiseLogitsProcessor):
+    def handle(self, request):
+        super().handle(request)
+        if request.disliked_items:
+            disliked_tokens = [
+                self.encode(item, PathLanguageModelingTokenType.ITEM.token)
+                for item in request.disliked_items
+            ]
+            self.set_restrictions(hard_restrictions=disliked_tokens)
+        return self
+```
+
+### Step 5: Implement a Sequence Processor (optional)
+
+The sequence processor receives complete generated paths and can apply post-generation operations such as filtering, duplicate removal, or re-ranking.
+
+```python
+from hoploy.registry import SequenceProcessor
+from hoploy.components import DefaultHopwiseSequenceScorePostProcessor
+
+@SequenceProcessor("my-sequence-processor")
+class MySequenceProcessor(DefaultHopwiseSequenceScorePostProcessor):
+    def handle(self, request):
+        super().handle(request)
+        return self
+```
+
+### Step 6: Configure your plugin
+
+The plugin configuration file declares the components registered in the previous steps and binds them to API endpoints. It merges with the framework defaults at startup.
 
 ```yaml
-model:
-  my_model_key:
-    name: my_model
-    device: "cuda"
-    hopwise_checkpoint_file: "checkpoint/my_domain/..."
-    dataset: "dataset/my_domain"
+# your-plugin/config.yaml
+plugin:
+  name: my-plugin
+  wrapper: [my-wrapper]
+  logits_processors: [my-logits-processor]
+  sequence_processor: [my-sequence-processor]
+  schema:
+    module: your_schema
+    get:
+      info: my-wrapper.info
+    post:
+      recommend: run
+
+wrapper:
+  pearlm:
+    name: my-wrapper
+    device: "cuda:0"
+    recommendation_count: 5
+    diversity_factor: 0.5
+    load_col_item: ["item_id", "name"]
 
 logits_processors:
-  my_processor:
-    name: my_logits_processor
+  my-logits-processor:
+    name: my-logits-processor
 
 sequence_processor:
-  my_seq_processor:
-    name: my_sequence_processor
+  my-sequence-processor:
+    name: my-sequence-processor
 ```
 
-And declare the plugin in `configs/default.yaml`:
+#### Component registration
+
+`wrapper: [my-wrapper]`, `logits_processors: [my-logits-processor]`, and `sequence_processor: [my-sequence-processor]` tell the framework which implementations to load. Each value must match exactly the name passed to the corresponding decorator (`@Wrapper("my-wrapper")`, `@LogitsProcessor("my-logits-processor")`, `@SequenceProcessor("my-sequence-processor")`). Multiple logits processors can be listed and will be applied in declaration order.
+
+The sections below (`wrapper.pearlm`, `logits_processors.my-logits-processor`, etc.) carry component-specific parameters. The model-level keys under `wrapper.pearlm` (`device`, `compile_mode`, `recommendation_count`, `diversity_factor`, etc.) depend on the underlying Hopwise model — refer to the [Hopwise documentation](https://github.com/tail-unica/hopwise) for the full list of supported parameters.
+
+#### Schema and API routing
+
+`schema.module` is the name of the Python file containing the schema definitions (without the `.py` extension). Hoploy imports this module at startup and discovers the `@Request` / `@Response` decorated classes automatically.
+
+The `get` and `post` sections bind HTTP routes to handlers. Each key is the path suffix — it must match the path registered in the `@Request` / `@Response` decorators (e.g. `recommend` binds to `@Request("/recommend")`). Hoploy generates FastAPI routers for these endpoints automatically.
+
+The value on the right-hand side selects the handler:
+
+- **`run`** is a special keyword that passes the validated request body directly into the inference pipeline (distillation → path generation → expansion).
+- **`component.method`** binds the route to a specific method on a registered component. For example, `info: my-wrapper.info` creates a `GET /info` endpoint backed by the `info()` method of `my-wrapper`. This is useful for auxiliary endpoints such as metadata inspection or item search. The method receives the request payload and may also access the catalog directly:
+
+```python
+from hoploy.core.catalog import get_catalog
+
+@Wrapper("my-wrapper")
+class MyWrapper(DefaultHopwiseWrapper):
+    ...
+
+    def info(self, request):
+        catalog = get_catalog()
+        item = catalog.get(request.item_id)
+        return {"name": item["name"], "description": item["description"]}
+```
+
+### Step 7: Deploy
+
+Add your plugin service to `compose.yaml`:
 
 ```yaml
-plugin:
-  my_domain:
-    name: my_domain
-    path: "plugins/my_domain"
-    schema:
-      module: my_domain_schema
-      get:
-        info: info        # endpoint: pipeline handler method
-      post:
-        recommend: run
-        search: search
+services:
+  your-plugin:
+    <<: *hoploy-base
+    ports:
+      - "${YOUR_PLUGIN_PORT:-8100}:8100"
+    volumes:
+      - ./your-plugin:/app/plugin:ro
+      - ./your-dataset-dir:/app/dataset:ro
+      - ./your-checkpoints-dir:/app/checkpoints:ro
 ```
 
-## Quick start
+Then start the service:
 
 ```bash
-pip install -e .
-uvicorn hoploy.main:app --host 0.0.0.0 --port 8000
+docker compose up your-plugin
 ```
 
-Or with Docker:
+Each plugin runs as an independent Docker service built on a shared `hoploy-base` configuration. At startup, the framework materializes the relevant dataset fields into a Parquet file used as a fast-access catalog cache throughout the service lifetime. The health check endpoint is available at `GET /health`.
 
-```bash
-docker compose up
-```
-
-API docs are available at `http://localhost:8000/docs`.
-
-## License
-
-See [LICENSE](LICENSE).
+API docs are automatically generated by FastAPI and can be accessed at `http://localhost:8100/docs` (or the port you configured). The API surface is defined entirely by the plugin schemas and configuration; the framework does not hard-code any application-specific endpoints.
