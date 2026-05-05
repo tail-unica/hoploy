@@ -1,0 +1,32 @@
+plugin:
+  name: greenfoodlens
+  wrapper: [greenfoodlens_wrapper]
+  logits_processors: [greenfoodlens_logits_processor, greenfoodlens_restricted_logits_processor]
+  sequence_processor: [greenfoodlens_sequence_processor]
+  schema:
+    module: schemas
+    get:
+      info: greenfoodlens_wrapper.info
+    post:
+      recommend: run
+      search: greenfoodlens_wrapper.search
+
+wrapper:
+  pearlm:
+    name: greenfoodlens_wrapper
+    device: "cuda:0"
+    compile_mode: "default"
+    recommendation_count: 5
+    diversity_factor: 0.5
+    load_col_item: ["recipe_id", "name", "description"]
+
+logits_processors:
+  greenfoodlens_logits_processor:
+    name: greenfoodlens_logits_processor
+  greenfoodlens_restricted_logits_processor:
+    name: greenfoodlens_restricted_logits_processor
+    propagate_connected_entities: false
+
+sequence_processor:
+  greenfoodlens_sequence_processor:
+    name: greenfoodlens_sequence_processor

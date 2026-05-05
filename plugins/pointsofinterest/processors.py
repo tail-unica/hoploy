@@ -130,9 +130,9 @@ def user_sample_compatible_features(aversions: dict[str, float]) -> list[str]:
 
 # ---- Plugin processors ----
 
-@SequenceProcessor("autism_sequence_processor")
-class AutismSequenceProcessor(ForcedSequenceScorePostProcessor):
-    """Autism-specific sequence score post-processor.
+@SequenceProcessor("poi_sequence_processor")
+class PointsOfInterestSequenceProcessor(ForcedSequenceScorePostProcessor):
+    """Points of Interest-specific sequence score post-processor.
 
     Extends :class:`~hoploy.components.processors.forced_sequence_processor.ForcedSequenceScorePostProcessor`
     to apply forced relation-path filtering and per-type diversity boosting
@@ -143,9 +143,9 @@ class AutismSequenceProcessor(ForcedSequenceScorePostProcessor):
         super().__init__(dataset, cfg, **kwargs)
 
 
-@LogitsProcessor("autism_logits_processor")
-class AutismLogitsProcessor(ForcedLogitsProcessor):
-    """Autism-specific logits processor.
+@LogitsProcessor("poi_logits_processor")
+class PointsOfInterestLogitsProcessor(ForcedLogitsProcessor):
+    """Points of Interest-specific logits processor.
 
     Extends the forced-path processor to merge user preferences into
     previous recommendations, preventing the model from re-recommending
@@ -196,9 +196,9 @@ class AutismLogitsProcessor(ForcedLogitsProcessor):
         return self
 
 
-@LogitsProcessor("autism_restricted_logits_processor")
-class AutismRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
-    """Autism-specific restricted logits processor.
+@LogitsProcessor("poi_restricted_logits_processor")
+class PointsOfInterestRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
+    """Points of Interest-specific restricted logits processor.
 
     Computes hard token restrictions from the user's sensory aversions
     so the model cannot generate incompatible features.
@@ -212,7 +212,7 @@ class AutismRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
         :param request: Incoming recommendation request.
         :type request: Config
         :returns: Self.
-        :rtype: AutismRestrictedLogitsProcessor
+        :rtype: PointsOfInterestRestrictedLogitsProcessor
         """
         self.clear_restrictions()
         aversions = getattr(request, "aversions", None)
@@ -235,6 +235,6 @@ class AutismRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
                     pass  # entity not present in this dataset, skip
             if hopwise_ids:
                 self.set_restrictions(hard_restrictions=hopwise_ids)
-                logger.info(f"Autism restricted processor: {len(hopwise_ids)} hard restrictions set")
+                logger.info(f"Points of Interest restricted processor: {len(hopwise_ids)} hard restrictions set")
 
         return self

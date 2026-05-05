@@ -55,23 +55,23 @@ services:
   # Start individually:  docker compose up hummus
   # Start together:      docker compose up hummus autism
   # ---------------------------------------------------------------------------
-  hummus:
+  greenfoodlens:
     <<: *hoploy-base
     ports:
-      - "${HUMMUS_PORT:-8102}:8100"
+      - "${GREEN_FOOD_LENS_PORT:-8102}:8100"
     volumes:
-      - ./plugins/hummus:/app/plugin:ro
-      - ./datasets/hummus:/app/dataset:ro
-      - ./checkpoints/hummus:/app/checkpoints:ro
+      - ./plugins/greenfoodlens:/app/plugin:ro
+      - ./datasets/greenfoodlens:/app/dataset:ro
+      - ./checkpoints/greenfoodlens:/app/checkpoints:ro
 
-  autism:
+  pointsofinterest:
     <<: *hoploy-base
     ports:
-      - "${AUTISM_PORT:-8103}:8100"
+      - "${POINTS_OF_INTEREST_PORT:-8103}:8100"
     volumes:
-      - ./plugins/autism:/app/plugin:ro
-      - ./datasets/autism:/app/dataset:ro
-      - ./checkpoints/autism:/app/checkpoints:ro
+      - ./plugins/pointsofinterest:/app/plugin:ro
+      - ./datasets/pointsofinterest:/app/dataset:ro
+      - ./checkpoints/pointsofinterest:/app/checkpoints:ro
 
   # ---------------------------------------------------------------------------
   # Hopwise training service.

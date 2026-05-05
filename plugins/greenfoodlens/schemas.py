@@ -126,10 +126,6 @@ class RecommendationRequest(BaseModel):
         ge=0.0,
         le=1.0,
     )
-    conversation_id: Optional[str] = Field(
-        default=None,
-        description="Identifier for the conversation",
-    )
 
 
 class RecommendationItem(BaseModel):
@@ -145,4 +141,3 @@ class RecommendationResponse(BaseModel):
     recommendations: list[RecommendationItem] = Field(
         description="List of recommended food items with scores and metadata"
     )
-    conversation_id: Optional[str] = None

@@ -107,9 +107,9 @@ def _item_to_info(record: dict) -> dict:
 # --- Hummus model wrapper ---
 
 
-@Wrapper("hummus_model")
-class HummusWrapper(DefaultHopwiseWrapper):
-    """Food recommendation wrapper for the hummus dataset.
+@Wrapper("greenfoodlens_wrapper")
+class GreenFoodLensWrapper(DefaultHopwiseWrapper):
+    """Food recommendation wrapper for the GreenFoodLens dataset.
 
     Extends the default wrapper with a recipe catalog and nutritional
     metadata lookup.

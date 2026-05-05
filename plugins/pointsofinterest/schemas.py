@@ -255,11 +255,6 @@ class RecommendationRequest(BaseModel):
             {"feature_name": "odor", "rating": 1.0},
         ],
     )
-    conversation_id: Optional[str] = Field(
-        default=None,
-        description="Identifier for the conversation these recommendations are associated with",
-        example="conv_2025032012345",
-    )
 
 
 class RecommendationItem(BaseModel):
@@ -287,9 +282,4 @@ class RecommendationResponse(BaseModel):
     user_id: str = Field(description="Unique identifier for the user", example="12345")
     recommendations: list[RecommendationItem] = Field(
         description="List of recommended food items with scores and metadata"
-    )
-    conversation_id: Optional[str] = Field(
-        default=None,
-        description="Identifier for the conversation these recommendations are associated with",
-        example="conv_2025032012345",
     )

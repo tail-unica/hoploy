@@ -1,6 +1,9 @@
-# Hoploy
+<h1 align="center">🐸 Hoploy</h1>
+<p align="center">
+  <b>Serving layer for <a href="https://github.com/tail-unica/hopwise">Hopwise</a> recommendation models.</b>
+</p>
 
-Serving layer for [Hopwise](https://github.com/tail-unica/hopwise) recommendation models.
+---
 
 Hoploy is an inference and explanation layer for pre-trained path-reasoning models. It wraps Hopwise models into a deployable REST API service, separating a reusable inference workflow from plugin-defined application logic. The framework handles configuration loading, API construction, component validation, model execution, and request orchestration; plugins provide the domain-specific elements — request and response schemas, preference mapping, decoding controls, and explanation rendering.
 

@@ -12,9 +12,9 @@ from hoploy.core.catalog import get_catalog
 from hoploy.core.utils import get_valid_item_ids
 
 
-@LogitsProcessor("hummus_logits_processor")
-class HummusLogitsProcessor(DefaultHopwiseLogitsProcessor):
-    """Hummus-specific logits processor.
+@LogitsProcessor("greenfoodlens_logits_processor")
+class GreenFoodLensLogitsProcessor(DefaultHopwiseLogitsProcessor):
+    """GreenFoodLens-specific logits processor.
 
     Masks previously recommended recipes and user preferences so the
     model does not re-recommend known items.
@@ -57,9 +57,9 @@ class HummusLogitsProcessor(DefaultHopwiseLogitsProcessor):
         return self
 
 
-@LogitsProcessor("hummus_restricted_logits_processor")
-class HummusRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
-    """Hummus-specific restricted logits processor.
+@LogitsProcessor("greenfoodlens_restricted_logits_processor")
+class GreenFoodLensRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
+    """GreenFoodLens-specific restricted logits processor.
 
     Accepts hard and soft restriction lists from the request and
     translates recipe/ingredient names to entity tokens.
@@ -115,14 +115,14 @@ class HummusRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
                 soft_restrictions=soft_ids or None,
             )
             logger.info(
-                f"Hummus restricted processor: {len(hard_ids)} hard, {len(soft_ids)} soft restrictions"
+                f"GreenFoodLens restricted processor: {len(hard_ids)} hard, {len(soft_ids)} soft restrictions"
             )
         return self
 
 
-@SequenceProcessor("hummus_sequence_processor")
-class HummusSequenceProcessor(DefaultHopwiseSequenceScorePostProcessor):
-    """Hummus-specific sequence score post-processor.
+@SequenceProcessor("greenfoodlens_sequence_processor")
+class GreenFoodLensSequenceProcessor(DefaultHopwiseSequenceScorePostProcessor):
+    """GreenFoodLens-specific sequence score post-processor.
 
     Identical to the default for now — placeholder for future
     domain-specific scoring adjustments.

@@ -90,6 +90,8 @@ class DefaultHopwiseWrapper(BaseWrapper):
         self.model.load_state_dict(weights, strict=False)
 
         self._dataset._tokenizer = AutoTokenizer.from_pretrained(hf_checkpoint_file)
+        logger.info("")
+
         self.model = torch.compile(self.model, mode=self.cfg.compile_mode)
         logger.debug(f"Model compiled with mode {self.cfg.compile_mode}")
 

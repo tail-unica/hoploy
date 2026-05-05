@@ -215,11 +215,11 @@ def _item_to_info(record, sensory_features):
     }
 
 
-# ---- Autism model wrapper ----
+# ---- Points of Interest model wrapper ----
 
-@Wrapper("autism_model")
-class AutismWrapper(DefaultHopwiseWrapper):
-    """Autism-specific recommendation wrapper.
+@Wrapper("poi_wrapper")
+class PointsOfInterestWrapper(DefaultHopwiseWrapper):
+    """Points of Interest-specific recommendation wrapper.
 
     Extends the default wrapper with an item catalog, sensory
     feature awareness, and Italian text explanations.
@@ -292,7 +292,7 @@ class AutismWrapper(DefaultHopwiseWrapper):
                 except KeyError:
                     pass
 
-        logger.debug(f"Autism distill: {len(raw_inputs)} raw inputs")
+        logger.debug(f"Points of Interest distill: {len(raw_inputs)} raw inputs")
         return raw_inputs
 
     def handle(self, request):
@@ -301,13 +301,13 @@ class AutismWrapper(DefaultHopwiseWrapper):
         :param request: Incoming request.
         :type request: Config
         :returns: Self.
-        :rtype: AutismWrapper
+        :rtype: PointsOfInterestWrapper
         """
         super().handle(request)
         return self
 
     def expand(self, values, request):
-        """Convert raw model output to the autism response schema.
+        """Convert raw model output to the Points of Interest response schema.
 
         Builds a ``RecommendationResponse``-compatible dict with place
         names, scores, explanation text, and item metadata.
