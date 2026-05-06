@@ -2,10 +2,9 @@ from hopwise.utils import PathLanguageModelingTokenType
 
 from hoploy.components import (
     DefaultHopwiseLogitsProcessor,
-    DefaultHopwiseSequenceScorePostProcessor,
     RestrictedHopwiseLogitsProcessor,
 )
-from hoploy.registry import LogitsProcessor, SequenceProcessor
+from hoploy.registry import LogitsProcessor
 
 from hoploy import logger
 from hoploy.core.catalog import get_catalog
@@ -118,15 +117,3 @@ class GreenFoodLensRestrictedLogitsProcessor(RestrictedHopwiseLogitsProcessor):
                 f"GreenFoodLens restricted processor: {len(hard_ids)} hard, {len(soft_ids)} soft restrictions"
             )
         return self
-
-
-@SequenceProcessor("greenfoodlens_sequence_processor")
-class GreenFoodLensSequenceProcessor(DefaultHopwiseSequenceScorePostProcessor):
-    """GreenFoodLens-specific sequence score post-processor.
-
-    Identical to the default for now — placeholder for future
-    domain-specific scoring adjustments.
-    """
-
-    def __init__(self, dataset, cfg, **kwargs):
-        super().__init__(dataset, cfg, **kwargs)

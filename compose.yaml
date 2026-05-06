@@ -17,6 +17,10 @@ x-hoploy-base: &hoploy-base
     - PYTHONUNBUFFERED=1
     - PYTHONFAULTHANDLER=1
     - NVIDIA_VISIBLE_DEVICES=all
+  healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 2s
+      retries: 10
   deploy:
     resources:
       reservations:
@@ -29,7 +33,7 @@ x-hoploy-base: &hoploy-base
 
 x-train-base: &train-base
   image: hoploy:latest
-  user: "root"
+  user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
   command:
     - "-c"
     - "${CHECKPOINT_CONFIG:-movielens}"
@@ -39,7 +43,7 @@ x-train-base: &train-base
     - PYTHONUNBUFFERED=1
   restart: "no"
   volumes:
-    - /home/recsysdatasets:/app/datasets:ro
+    - ./datasets:/app/datasets:ro
     - ./checkpoints:/app/checkpoints
   deploy:
     resources:

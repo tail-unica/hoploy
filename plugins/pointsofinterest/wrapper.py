@@ -8,7 +8,7 @@ from hoploy.registry import Wrapper
 from hoploy import logger
 from hoploy.core.catalog import get_catalog
 
-from .processors import user_sample_compatible_features
+from .sensory import user_sample_compatible_features
 
 
 def _sensory_features_for(catalog, poi_id: str) -> list[dict]:

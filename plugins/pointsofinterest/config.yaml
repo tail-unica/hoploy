@@ -12,7 +12,7 @@ plugin:
       search: poi_wrapper.search
 
 wrapper:
-  kgglm:
+  pearlm:
     name: poi_wrapper
     device: "cuda:1" # "cuda" or "cpu"
     diversity_factor: 0.3
