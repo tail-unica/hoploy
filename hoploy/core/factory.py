@@ -262,7 +262,13 @@ def factory(pipeline, cfg):
         return RedirectResponse(url="/docs")
 
     @app.get("/health", tags=["health"])
-    def health() -> dict:
+    def health(request: FastAPIRequest) -> dict:
+        service = getattr(request.app.state, "service", None)
+        if not service or not service.is_ready():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Service warming up",
+            )
         return {"status": "ok"}
 
     # Auto-generate routes from plugin schema config

@@ -16,7 +16,7 @@ wrapper:
     name: greenfoodlens_wrapper
     device: "cuda:0"
     compile_mode: "default"
-    recommendation_count: 5
+    recommendation_count: 3
     diversity_factor: 0.5
     load_col_item: ["recipe_id", "name", "description"]
 

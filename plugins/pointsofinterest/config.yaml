@@ -14,8 +14,9 @@ plugin:
 wrapper:
   pearlm:
     name: poi_wrapper
-    device: "cuda:1" # "cuda" or "cpu"
+    device: "cuda:0" # "cuda" or "cpu"
     diversity_factor: 0.3
+    recommendation_count: 3
     propagate_connected_entities: false  # If true, entities connected with restricted KG elements will also be restricted
     compile_mode: "default"  # Options: "default", "reduce-overhead", "max-autotune"
     remove_user_tokens_from_sequences: false  # If true, user tokens will be removed from sequences in zero-shot recommendation

@@ -17,10 +17,6 @@ x-hoploy-base: &hoploy-base
     - PYTHONUNBUFFERED=1
     - PYTHONFAULTHANDLER=1
     - NVIDIA_VISIBLE_DEVICES=all
-  healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 2s
-      retries: 10
   deploy:
     resources:
       reservations:
@@ -50,7 +46,8 @@ x-train-base: &train-base
       reservations:
         devices:
           - driver: nvidia
-            device_ids: ["${GPU_DEVICE_1}"]
+            # device_ids: ["${GPU_DEVICE_1}"]
+            count: 2
             capabilities: [gpu]
 
 services:
@@ -66,7 +63,7 @@ services:
     volumes:
       - ./plugins/greenfoodlens:/app/plugin:ro
       - ./datasets/greenfoodlens:/app/dataset:ro
-      - ./checkpoints/greenfoodlens:/app/checkpoints:ro
+      - ./checkpoints/greenfoodlens:/app/checkpoints
 
   pointsofinterest:
     <<: *hoploy-base
