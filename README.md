@@ -383,6 +383,14 @@ The trace illustrates the full pipeline in action:
 
 Each recommendation includes the item name, a normalized path score, and a human-readable explanation derived from the reasoning path traversed through the knowledge graph. The full response also carries detailed nutritional, sustainability, and ingredient information for each item — omitted here for brevity.
 
+## Request-Response Traces Examples
+
+### Food Schema
+![food schema trace](assets/food_schema.jpg)
+
+### POIs Schema
+![pois schema trace](assets/pois_schema_short.jpg)
+
 ## 📜 Cite
 If you find **hoploy** useful for your research or development, please cite with:
 
